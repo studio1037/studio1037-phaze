@@ -32,14 +32,14 @@
    <div class="dial-wrap"><svg id="dial" viewBox="0 0 440 440" role="img" aria-label="Круг 16 часов, цветные сегменты событий"></svg>
     <div class="dial-center"><div class="center-kicker">СЕЙЧАС</div><div id="clockTime" class="clock-time">--:--</div><div id="clockAmPm" class="clock-ampm">--</div><div class="center-line"></div><div id="awakeRemaining" class="remaining">16ч 00м до сна</div></div>
    </div>
-   <div class="dial-footer"><span><i class="dot dot-past"></i><span id="elapsedLabel">Пройдено 0 из 16 ч</span></span><span id="dialHint">Нажми на свободную дугу</span></div>
+   <div class="dial-footer"><span><i class="dot dot-past"></i><span id="elapsedLabel">Пройдено 0 из 16 ч</span></span><span id="dialHint">Коснись кольца, чтобы узнать время</span></div>
  </section>
  <section class="stats" aria-label="Статистика дня"><div><span class="stat-label">Запланировано</span><strong id="plannedStat">0 ч</strong></div><div><span class="stat-label">Свободно</span><strong id="freeStat">16 ч</strong></div><div><span class="stat-label">Отмечено</span><strong id="doneStat">0 ч</strong></div></section>
  <section class="events-header"><div><h2>План дня</h2><p id="eventSubtitle">Раскрась время и увидь свой день</p></div><button id="addBtn" class="primary-button">+ Событие</button></section>
  <div id="eventList" class="event-list"></div>
  <section class="legend"><h3>Категории</h3><div class="legend-items"><span><i style="background:#5d9aff"></i> Работа</span><span><i style="background:#f1b85b"></i> Семья</span><span><i style="background:#ad91fa"></i> Ритуалы</span><span><i style="background:#67d8b0"></i> Личное</span><span><i style="background:#fa829a"></i> Отдых</span></div></section>
 </main>
-<footer>PHAZE v0.1.1 · Данные сохраняются в этом браузере · <button id="exportFooter">Резервная копия</button></footer>
+<footer>PHAZE v0.1.2 · Данные сохраняются в этом браузере · <button id="exportFooter">Резервная копия</button></footer>
 </div>
 <div class="modal-overlay" id="eventModal" hidden><section class="modal" role="dialog" aria-modal="true" aria-labelledby="eventModalTitle"><div class="modal-head"><h2 id="eventModalTitle">Новое событие</h2><button class="modal-close" data-close="eventModal" aria-label="Закрыть">×</button></div>
  <form id="eventForm"><input id="eventId" type="hidden"><label>Название<input id="titleField" required maxlength="80" placeholder="Например: Развезти детей"></label>
