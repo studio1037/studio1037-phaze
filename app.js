@@ -19,25 +19,50 @@ const dayDiff=(a,b)=>Math.round((Date.UTC(+a.slice(0,4),+a.slice(5,7)-1,+a.slice
 const safe=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const minsToText=n=>{n=Math.max(0,Math.round(n));let h=Math.floor(n/60),m=n%60;return h?`${h} ч${m?' '+m+' мин':''}`:`${m} мин`};
 const uuid=()=>crypto.randomUUID?crypto.randomUUID():String(Date.now())+Math.random().toString(36).slice(2);
-const defaultState=()=>({version:1,wake:'07:00',events:[],google:{clientId:'',selectedIds:[],cache:{},calendars:[]}});
+const ISRAEL_WEEKDAYS=[0,1,2,3,4];
+const defaultState=()=>({version:1,wake:'07:00',wakeSchedule:null,events:[],google:{clientId:'',selectedIds:[],cache:{},calendars:[]}});
 let state=defaultState();try{const v=JSON.parse(localStorage.getItem(STORE)||'null');if(v&&v.version===1&&Array.isArray(v.events)){state={...defaultState(),...v,google:{...defaultState().google,...(v.google||{})}}}}catch{}
 let selectedDate=localDate(new Date()),googleAccessToken='',googleExpire=0,tokenClient=null,toastTimer=null;
 function save(){try{localStorage.setItem(STORE,JSON.stringify(state))}catch{toast('Недостаточно места для сохранения')}}
 function toast(s){const el=$('toast');el.textContent=s;el.classList.add('visible');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('visible'),3500)}
-function wakeWindow(date=selectedDate){const start=wallTime(date,state.wake);return{start,end:new Date(start.getTime()+MINUTES*60000)}}
+function wakeSchedule(){
+ return state.wakeSchedule??{weekday:state.wake,weekend:state.wake,weekdays:ISRAEL_WEEKDAYS};
+}
+function wakeFor(date){
+ const schedule=wakeSchedule();
+ return schedule.weekdays.includes(fromDate(date).getUTCDay())?schedule.weekday:schedule.weekend;
+}
+function wakeWindow(date=selectedDate){
+ const start=wallTime(date,wakeFor(date));
+ return{start,end:new Date(start.getTime()+MINUTES*60000)};
+}
 function activeDate(now=new Date()){
- const date=localDate(now), previous=shiftDate(date,-1);
- return now<wakeWindow(previous).end?previous:date;
+ const date=localDate(now),previous=shiftDate(date,-1);
+ return now<wakeWindow(date).start&&now<wakeWindow(previous).end?previous:date;
 }
 selectedDate=activeDate();
 const clockStr=d=>d.toLocaleTimeString('ru-RU',{timeZone:ZONE,hour:'2-digit',minute:'2-digit',hour12:false});
-function positionOf(event,win){
+function positionOf(event,occurrenceDate,win){
  if(event.startMode==='relative')return win.start.getTime()+Number(event.offsetMin)*60000;
- const date=event.start<state.wake?shiftDate(selectedDate,1):selectedDate;
- return wallTime(date,event.start).getTime();
+ const calendarOffset=event.clockDateOffset??Number(event.start<state.wake);
+ return wallTime(shiftDate(occurrenceDate,calendarOffset),event.start).getTime();
 }
 function applies(e,date){const r=e.repeat||{type:'none',date};switch(r.type){case 'daily':return true;case 'weekly':return (r.weekdays||[]).includes(fromDate(date).getUTCDay());case 'interval':return dayDiff(date,r.anchor)>=0&&dayDiff(date,r.anchor)%Math.max(1,r.everyDays)===0;case 'dates':return(r.dates||[]).includes(date);case 'none':return r.date===date;default:return false}}
-function getLocal(win){return state.events.filter(e=>applies(e,selectedDate)&&!(e.skipDates||[]).includes(selectedDate)).map(e=>{let startMs=positionOf(e,win);return {...e,source:'local',startMs,endMs:startMs+Number(e.durationMin)*60000,done:(e.doneDates||[]).includes(selectedDate)}}).filter(e=>e.startMs<win.end.getTime()&&e.endMs>win.start.getTime()).sort((a,b)=>a.startMs-b.startMs)}
+function getLocal(win){
+ const clockDates=[-2,-1,0,1].map(delta=>shiftDate(selectedDate,delta));
+ const occurrences=[];
+ for(const event of state.events){
+  const dates=event.startMode==='clock'?clockDates:[selectedDate];
+  for(const date of dates){
+   if(!applies(event,date)||(event.skipDates||[]).includes(date))continue;
+   const startMs=positionOf(event,date,win),endMs=startMs+Number(event.durationMin)*60000;
+   if(startMs<+win.end&&endMs>+win.start){
+    occurrences.push({...event,source:'local',startMs,endMs,occurrenceDate:date,done:(event.doneDates||[]).includes(date)});
+   }
+  }
+ }
+ return occurrences.sort((a,b)=>a.startMs-b.startMs);
+}
 function getGoogle(win){const raw=state.google.cache[selectedDate]||[];return raw.map(e=>({...e,source:'google',startMs:Date.parse(e.start),endMs:Date.parse(e.end)})).filter(e=>e.allDay||(Number.isFinite(e.startMs)&&e.startMs<win.end.getTime()&&e.endMs>win.start.getTime())).sort((a,b)=>a.startMs-b.startMs)}
 function intervals(events,win){return events.filter(e=>!e.allDay).map(e=>[Math.max(0,(e.startMs-win.start.getTime())/60000),Math.min(MINUTES,(e.endMs-win.start.getTime())/60000)]).filter(p=>p[1]>p[0]).sort((a,b)=>a[0]-b[0])}
 function unionMinutes(intervals){let n=0,end=-1;for(const [a,b] of intervals){if(a>=end){n+=b-a;end=b}else if(b>end){n+=b-end;end=b}}return Math.round(n)}
@@ -200,20 +225,27 @@ function tickClock(){
 }
 function render(){const win=wakeWindow(),locals=getLocal(win),google=getGoogle(win),all=[...locals,...google];$('dateLabel').textContent=fromDate(selectedDate).toLocaleDateString('ru-RU',{weekday:'long',day:'numeric',month:'long',timeZone:'UTC'});$('dayRange').textContent=`${clockStr(win.start)} → ${clockStr(win.end)} · 16 часов`;renderDial(locals,google,win);
  const occupied=unionMinutes(intervals(all,win));$('plannedStat').textContent=minsToText(occupied);$('freeStat').textContent=minsToText(MINUTES-occupied);$('doneStat').textContent=minsToText(unionMinutes(intervals(locals.filter(x=>x.done),win)));$('eventSubtitle').textContent=`${locals.length} своих · ${google.length} из Google Calendar`;
- let html='';for(const e of [...all].sort((a,b)=>(a.allDay?-Infinity:a.startMs)-(b.allDay?-Infinity:b.startMs))){const isG=e.source==='google',from=e.allDay?'Весь день':clockStr(new Date(e.startMs)),to=e.allDay?'':clockStr(new Date(e.endMs)),color=isG?(e.color||'#75cbd5'):(CATS[e.category]?.color||CATS.other.color);const cat=isG?'Google Calendar':(CATS[e.category]?.name||'Другое');html+=`<div class="event-item ${e.done?'completed':''}"><i class="event-color" style="background:${safe(color)}"></i><div class="event-text"><div class="event-title">${safe(e.title)}</div><div class="event-meta">${from}${to?'–'+to:''} · ${cat}${!isG&&e.repeat.type!=='none'?' · ↻':''}</div></div><div class="event-actions">${isG?'':`<button class="event-check ${e.done?'checked':''}" aria-label="${e.done?'Отменить выполнение':'Отметить выполнение'}" data-done="${safe(e.id)}">${e.done?'✓':'○'}</button><button class="event-edit" aria-label="Редактировать" data-edit="${safe(e.id)}">✎</button>`}</div></div>`}
+ let html='';for(const e of [...all].sort((a,b)=>(a.allDay?-Infinity:a.startMs)-(b.allDay?-Infinity:b.startMs))){const isG=e.source==='google',from=e.allDay?'Весь день':clockStr(new Date(e.startMs)),to=e.allDay?'':clockStr(new Date(e.endMs)),color=isG?(e.color||'#75cbd5'):(CATS[e.category]?.color||CATS.other.color);const cat=isG?'Google Calendar':(CATS[e.category]?.name||'Другое');html+=`<div class="event-item ${e.done?'completed':''}"><i class="event-color" style="background:${safe(color)}"></i><div class="event-text"><div class="event-title">${safe(e.title)}</div><div class="event-meta">${from}${to?'–'+to:''} · ${cat}${!isG&&e.repeat.type!=='none'?' · ↻':''}</div></div><div class="event-actions">${isG?'':`<button class="event-check ${e.done?'checked':''}" aria-label="${e.done?'Отменить выполнение':'Отметить выполнение'}" data-done="${safe(e.id)}" data-occurrence="${safe(e.occurrenceDate)}">${e.done?'✓':'○'}</button><button class="event-edit" aria-label="Редактировать" data-edit="${safe(e.id)}">✎</button>`}</div></div>`}
  $('eventList').innerHTML=html||`<div class="empty-events">В этом дне пока нет событий.<br>Добавь первое событие и раскрась время.</div>`;
- $('eventList').querySelectorAll('[data-edit]').forEach(b=>b.addEventListener('click',()=>openEvent(state.events.find(e=>e.id===b.dataset.edit))));$('eventList').querySelectorAll('[data-done]').forEach(b=>b.addEventListener('click',()=>{const e=state.events.find(x=>x.id===b.dataset.done);if(!e)return;e.doneDates=e.doneDates||[];e.doneDates=e.doneDates.includes(selectedDate)?e.doneDates.filter(x=>x!==selectedDate):[...e.doneDates,selectedDate];save();render()}));
+ $('eventList').querySelectorAll('[data-edit]').forEach(b=>b.addEventListener('click',()=>openEvent(state.events.find(e=>e.id===b.dataset.edit))));$('eventList').querySelectorAll('[data-done]').forEach(b=>b.addEventListener('click',()=>{const e=state.events.find(x=>x.id===b.dataset.done);if(!e)return;e.doneDates=e.doneDates||[];const date=b.dataset.occurrence;e.doneDates=e.doneDates.includes(date)?e.doneDates.filter(x=>x!==date):[...e.doneDates,date];save();render()}));
  $('cloudStatus').textContent=googleAccessToken&&Date.now()<googleExpire?'● Google подключён':'● Локальный режим'+(google.length?' · кэш Google':'');}
 function modal(id,show){$(id).hidden=!show;document.body.style.overflow=show?'hidden':''}
 function renderRepeatFields(){const r=$('repeatField').value;for(const id of ['weekRow','intervalRow','datesRow','singleRow'])$(id).hidden=!(id===({weekly:'weekRow',interval:'intervalRow',dates:'datesRow',none:'singleRow'}[r]));}
 function renderModeFields(){const rel=$('startMode').value==='relative';$('relativeRow').hidden=!rel;$('clockRow').hidden=rel}
-function openEvent(e){if(!e)return;const edit=!!e.id;$('eventModalTitle').textContent=edit?'Редактировать повторение':'Новое событие';$('eventId').value=edit?e.id:'';$('titleField').value=e.title||'';$('categoryField').value=e.category||'family';$('durationField').value=e.durationMin||60;$('startMode').value=e.startMode||'relative';$('offsetField').value=e.offsetMin??0;$('startField').value=e.start||state.wake;$('repeatField').value=e.repeat?.type||'daily';$('intervalField').value=e.repeat?.everyDays||2;$('anchorField').value=e.repeat?.anchor||selectedDate;$('datesField').value=(e.repeat?.dates||[]).join(', ');$('singleField').value=e.repeat?.date||selectedDate;$('weekRow').querySelectorAll('input[type=checkbox]').forEach(b=>b.checked=(e.repeat?.weekdays||[1,2,3,4,5]).includes(Number(b.value)));$('deleteEventBtn').hidden=!edit;renderModeFields();renderRepeatFields();modal('eventModal',true)}
+function openEvent(e){if(!e)return;const edit=!!e.id;$('eventModalTitle').textContent=edit?'Редактировать повторение':'Новое событие';$('eventId').value=edit?e.id:'';$('titleField').value=e.title||'';$('categoryField').value=e.category||'family';$('durationField').value=e.durationMin||60;$('startMode').value=e.startMode||'relative';$('offsetField').value=e.offsetMin??0;$('startField').value=e.start||wakeFor(selectedDate);$('repeatField').value=e.repeat?.type||'daily';$('intervalField').value=e.repeat?.everyDays||2;$('anchorField').value=e.repeat?.anchor||selectedDate;$('datesField').value=(e.repeat?.dates||[]).join(', ');$('singleField').value=e.repeat?.date||selectedDate;$('weekRow').querySelectorAll('input[type=checkbox]').forEach(b=>b.checked=(e.repeat?.weekdays||[1,2,3,4,5]).includes(Number(b.value)));$('deleteEventBtn').hidden=!edit;renderModeFields();renderRepeatFields();modal('eventModal',true)}
 function onSaveEvent(ev){ev.preventDefault();const rtype=$('repeatField').value,duration=Number($('durationField').value),offset=Number($('offsetField').value);if(!Number.isFinite(duration)||duration<1||duration>960||!Number.isFinite(offset)||offset<0||offset>959){toast('Проверь время и продолжительность');return}let repeat={type:rtype};if(rtype==='weekly'){repeat.weekdays=[...$('weekRow').querySelectorAll('input:checked')].map(b=>Number(b.value));if(!repeat.weekdays.length){toast('Выбери хотя бы один день недели');return}}if(rtype==='interval'){repeat.everyDays=Math.round(Number($('intervalField').value));repeat.anchor=$('anchorField').value;if(!repeat.anchor||repeat.everyDays<2||repeat.everyDays>365){toast('Проверь правило повторения');return}}if(rtype==='dates'){repeat.dates=$('datesField').value.split(/[,;\n]+/).map(s=>s.trim()).filter(Boolean);if(!repeat.dates.length||repeat.dates.some(x=>!/^\d{4}-\d{2}-\d{2}$/.test(x)||!Number.isFinite(fromDate(x).getTime())||fromDate(x).toISOString().slice(0,10)!==x)){toast('Укажи корректные даты ГГГГ-ММ-ДД');return}}if(rtype==='none'){repeat.date=$('singleField').value;if(!repeat.date){toast('Выбери дату');return}}
- const id=$('eventId').value;const original=state.events.find(e=>e.id===id);const next={id:id||uuid(),title:$('titleField').value.trim(),category:$('categoryField').value,durationMin:duration,startMode:$('startMode').value,offsetMin:Math.round(offset),start:$('startField').value,repeat,doneDates:original?.doneDates||[],skipDates:original?.skipDates||[]};if(!next.title){toast('Введите название');return}if(next.startMode==='relative'&&offset+duration>960){toast('Событие выходит за пределы 16-часового дня');return}if(id)state.events=state.events.map(e=>e.id===id?next:e);else state.events.push(next);save();modal('eventModal',false);render();toast('Событие сохранено')}
+ const id=$('eventId').value;const original=state.events.find(e=>e.id===id);const next={id:id||uuid(),title:$('titleField').value.trim(),category:$('categoryField').value,durationMin:duration,startMode:$('startMode').value,offsetMin:Math.round(offset),start:$('startField').value,repeat,doneDates:original?.doneDates||[],skipDates:original?.skipDates||[]};if(next.startMode==='clock'){
+  const sameClock=original?.startMode==='clock'&&original.start===next.start;
+  next.clockDateOffset=sameClock?(original.clockDateOffset??Number(next.start<state.wake)):Number(next.start<wakeFor(selectedDate));
+ }
+ if(!next.title){toast('Введите название');return}if(next.startMode==='relative'&&offset+duration>960){toast('Событие выходит за пределы 16-часового дня');return}if(id)state.events=state.events.map(e=>e.id===id?next:e);else state.events.push(next);save();modal('eventModal',false);render();toast('Событие сохранено')}
 function dayMove(delta){selectedDate=shiftDate(selectedDate,delta);render();if(googleAccessToken&&Date.now()<googleExpire)syncGoogle(false)}
-function exportData(){const data={...state,google:{...state.google,cache:{},calendars:[]}};const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`phaze-backup-${localDate(new Date())}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('Резервная копия сохранена (без кэша Google)')}
+function exportData(){const {syncMeta,...localState}=state;const data={...localState,google:{...state.google,cache:{},calendars:[]}};const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`phaze-backup-${localDate(new Date())}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('Резервная копия сохранена (без кэша Google)')}
 const validTime=value=>typeof value==='string'&&/^([01]\d|2[0-3]):[0-5]\d$/.test(value);
 const validDate=value=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(+fromDate(value))&&fromDate(value).toISOString().slice(0,10)===value;
+const validWakeSchedule=value=>value&&validTime(value.weekday)&&validTime(value.weekend)
+ &&Array.isArray(value.weekdays)&&value.weekdays.every(day=>Number.isInteger(day)&&day>=0&&day<=6)
+ &&new Set(value.weekdays).size===value.weekdays.length;
 const validDates=value=>Array.isArray(value)&&value.every(validDate);
 function validRepeat(rule){
  if(!rule)return false;
@@ -230,9 +262,10 @@ function validEvent(e){
  return e&&typeof e.id==='string'&&e.id&&typeof e.title==='string'&&e.title.trim()&&e.title.length<=80
   &&Number.isInteger(e.durationMin)&&e.durationMin>=1&&e.durationMin<=960
   &&(e.startMode==='clock'?validTime(e.start):e.startMode==='relative'&&Number.isInteger(e.offsetMin)&&e.offsetMin>=0&&e.offsetMin+e.durationMin<=960)
+  &&(e.clockDateOffset===undefined||[0,1].includes(e.clockDateOffset))
   &&validRepeat(e.repeat)&&validDates(e.doneDates??[])&&validDates(e.skipDates??[]);
 }
-async function importData(file){try{if(file.size>2e6)throw Error('Файл слишком большой');const v=JSON.parse(await file.text());if(v.version!==1||!Array.isArray(v.events)||v.events.length>3000||!v.events.every(validEvent)||new Set(v.events.map(e=>e.id)).size!==v.events.length||!validTime(v.wake))throw Error('Формат файла не подходит');if(!confirm(`Заменить локальные события (${state.events.length}) событиями из файла (${v.events.length})?`))return;state.events=v.events;state.wake=v.wake;state.google.cache={};googleSyncVersion++;save();render();toast('Данные восстановлены')}catch(err){toast('Не удалось импортировать: '+err.message)}}
+async function importData(file){try{if(file.size>2e6)throw Error('Файл слишком большой');const v=JSON.parse(await file.text());if(v.version!==1||!Array.isArray(v.events)||v.events.length>3000||!v.events.every(validEvent)||new Set(v.events.map(e=>e.id)).size!==v.events.length||!validTime(v.wake)||(v.wakeSchedule!=null&&!validWakeSchedule(v.wakeSchedule)))throw Error('Формат файла не подходит');if(!confirm(`Заменить локальные события (${state.events.length}) событиями из файла (${v.events.length})?`))return;state.events=v.events;state.wake=v.wake;state.wakeSchedule=v.wakeSchedule??null;state.google.cache={};googleSyncVersion++;save();render();toast('Данные восстановлены')}catch(err){toast('Не удалось импортировать: '+err.message)}}
 function setGoogleMessage(s){$('googleMessage').textContent=s}
 function googleError(e){const msg=e.message||String(e);setGoogleMessage(msg);toast('Google: '+msg)}
 function startGoogleAuth(){const clientId=$('clientIdField').value.trim();if(!/^[\w-]+\.apps\.googleusercontent\.com$/.test(clientId)){googleError(Error('Введи OAuth Client ID веб-приложения'));return}if(!window.google?.accounts?.oauth2){toast('Google Identity недоступен — проверь сеть');return}try{tokenClient=google.accounts.oauth2.initTokenClient({client_id:clientId,scope:'https://www.googleapis.com/auth/calendar.readonly',callback:async res=>{if(res.error||!res.access_token){googleError(Error(res.error_description||res.error||'Google не выдал токен'));return}googleSyncVersion++;state.google.cache={};render();googleAccessToken=res.access_token;googleExpire=Date.now()+(Number(res.expires_in)||3600)*1000-60000;setGoogleMessage('Доступ предоставлен на текущую сессию');try{await fetchCalendars();await syncGoogle(true)}catch(err){googleError(err)}},error_callback:e=>googleError(Error(({popup_closed:'Окно Google закрыто',popup_failed_to_open:'Разреши всплывающие окна для PHAZE'})[e.type]||e.message||'Ошибка авторизации'))});tokenClient.requestAccessToken({prompt:googleAccessToken?'':'consent'})}catch(e){googleError(e)}}
@@ -279,14 +312,65 @@ async function syncGoogle(showToast=true){
   if(showToast)toast(`Получено ${events.length} событий из Google Calendar`);
  }catch(error){if(isCurrent())googleError(error)}
 }
-function setup(){setupDialPointer();const events=[['prevBtn','click',()=>dayMove(-1)],['nextBtn','click',()=>dayMove(1)],['todayBtn','click',()=>{selectedDate=activeDate();render();if(googleAccessToken)syncGoogle(false)}],['addBtn','click',()=>openEvent({title:'',category:'family',durationMin:Math.min(60,MINUTES-(pinnedMinute??0)),startMode:'relative',offsetMin:pinnedMinute??0,start:state.wake,repeat:{type:'daily'},doneDates:[],skipDates:[]})],['settingsBtn','click',()=>{$('wakeField').value=state.wake;$('clientIdField').value=state.google.clientId;renderCalendarChooser();modal('settingsModal',true)}],['eventForm','submit',onSaveEvent],['repeatField','change',renderRepeatFields],['startMode','change',renderModeFields],['exportBtn','click',exportData],['exportFooter','click',exportData],['importBtn','click',()=>$('importFile').click()],['importFile','change',ev=>{if(ev.target.files[0])importData(ev.target.files[0]);ev.target.value=''}],['connectGoogleBtn','click',startGoogleAuth],['syncGoogleBtn','click',()=>syncGoogle()],['clearCalendarBtn','click',()=>{googleSyncVersion++;state.google.cache={};save();render();setGoogleMessage('Кэш Google очищен');toast('Кэш Google очищен')}]];for(const [id,t,f]of events)$(id).addEventListener(t,f);
+function renderWakeSettings(){
+ const schedule=wakeSchedule();
+ $('wakeField').value=schedule.weekday;
+ $('weekendWakeField').value=schedule.weekend;
+ $('wakeWeekdays').querySelectorAll('input').forEach(input=>{input.checked=schedule.weekdays.includes(Number(input.value))});
+}
+
+function saveWakeSettings(event){
+ event.preventDefault();
+ const schedule={
+  weekday:$('wakeField').value,weekend:$('weekendWakeField').value,
+  weekdays:[...$('wakeWeekdays').querySelectorAll('input:checked')].map(input=>Number(input.value))
+ };
+ if(!validWakeSchedule(schedule)){toast('Проверь время пробуждения');return}
+ state.wakeSchedule=schedule;
+ googleSyncVersion++;
+ state.google.cache={};
+ save();
+ render();
+ if(googleAccessToken)syncGoogle(false);
+ toast('Расписание пробуждения сохранено');
+}
+function syncDocument(){
+ return {
+  wakeSchedule:wakeSchedule(),
+  events:state.events.map(event=>event.startMode==='clock'
+   ? {...event,clockDateOffset:event.clockDateOffset??Number(event.start<state.wake)}
+   : event)
+ };
+}
+function validSyncDocument(value){
+ return value&&validWakeSchedule(value.wakeSchedule)&&Array.isArray(value.events)&&value.events.length<=3000
+  &&value.events.every(validEvent)&&new Set(value.events.map(event=>event.id)).size===value.events.length;
+}
+function applySyncDocument(value,meta){
+ const changed=JSON.stringify(syncDocument())!==JSON.stringify(value);
+ if(changed){
+  state.wakeSchedule=value.wakeSchedule;
+  state.events=value.events;
+  googleSyncVersion++;
+  state.google.cache={};
+ }
+ state.syncMeta=meta;
+ save();
+ if(changed)render();
+}
+function setup(){setupDialPointer();const events=[['prevBtn','click',()=>dayMove(-1)],['nextBtn','click',()=>dayMove(1)],['todayBtn','click',()=>{selectedDate=activeDate();render();if(googleAccessToken)syncGoogle(false)}],['addBtn','click',()=>openEvent({title:'',category:'family',durationMin:Math.min(60,MINUTES-(pinnedMinute??0)),startMode:'relative',offsetMin:pinnedMinute??0,start:wakeFor(selectedDate),repeat:{type:'daily'},doneDates:[],skipDates:[]})],['settingsBtn','click',()=>{renderWakeSettings();$('clientIdField').value=state.google.clientId;renderCalendarChooser();modal('settingsModal',true)}],['eventForm','submit',onSaveEvent],['repeatField','change',renderRepeatFields],['startMode','change',renderModeFields],['exportBtn','click',exportData],['exportFooter','click',exportData],['importBtn','click',()=>$('importFile').click()],['importFile','change',ev=>{if(ev.target.files[0])importData(ev.target.files[0]);ev.target.value=''}],['connectGoogleBtn','click',startGoogleAuth],['syncGoogleBtn','click',()=>syncGoogle()],['clearCalendarBtn','click',()=>{googleSyncVersion++;state.google.cache={};save();render();setGoogleMessage('Кэш Google очищен');toast('Кэш Google очищен')}]];for(const [id,t,f]of events)$(id).addEventListener(t,f);
  $('deleteEventBtn').addEventListener('click',()=>{const id=$('eventId').value;if(!id||!confirm('Удалить событие и все его повторения?'))return;state.events=state.events.filter(e=>e.id!==id);save();modal('eventModal',false);render();toast('Событие удалено')});
- $('wakeField').addEventListener('change',e=>{if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(e.target.value))return;state.wake=e.target.value;googleSyncVersion++;state.google.cache={};save();render();if(googleAccessToken)syncGoogle(false);toast('Время пробуждения обновлено')});
+ $('wakeForm').addEventListener('submit',saveWakeSettings);
  $('clientIdField').addEventListener('change',e=>{const v=e.target.value.trim();if(v!==state.google.clientId){state.google.clientId=v;googleSyncVersion++;state.google.selectedIds=[];state.google.selectionSet=false;state.google.calendars=[];state.google.cache={};googleAccessToken='';googleExpire=0;renderCalendarChooser();setGoogleMessage('Не подключено');save();render()}});
  $('dateBtn').addEventListener('click',()=>{const input=$('dateInput');input.value=selectedDate;input.showPicker?input.showPicker():input.click()});$('dateInput').addEventListener('change',e=>{if(/^\d{4}-\d{2}-\d{2}$/.test(e.target.value)){selectedDate=e.target.value;render();if(googleAccessToken)syncGoogle(false)}});
  document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',()=>modal(b.dataset.close,false)));document.querySelectorAll('.modal-overlay').forEach(el=>el.addEventListener('mousedown',e=>{if(e.target===el)modal(el.id,false)}));document.addEventListener('keydown',e=>{if(e.key==='Escape'){modal('eventModal',false);modal('settingsModal',false)}});
  document.addEventListener('visibilitychange',()=>{if(!document.hidden){tickClock();render()}});
  if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./service-worker.js').catch(()=>{});
- render();setInterval(tickClock,1000)}
+ render();setInterval(tickClock,1000);
+ window.PHAZESync?.start({
+  read:syncDocument,readMeta:()=>state.syncMeta,apply:applySyncDocument,validate:validSyncDocument,
+  isEditing:()=>!$('eventModal').hidden,
+  isPristine:()=>!state.events.length&&state.wake==='07:00'&&!state.wakeSchedule
+ })}
 setup();
 })();
