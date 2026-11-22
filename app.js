@@ -42,24 +42,161 @@ function getGoogle(win){const raw=state.google.cache[selectedDate]||[];return ra
 function intervals(events,win){return events.filter(e=>!e.allDay).map(e=>[Math.max(0,(e.startMs-win.start.getTime())/60000),Math.min(MINUTES,(e.endMs-win.start.getTime())/60000)]).filter(p=>p[1]>p[0]).sort((a,b)=>a[0]-b[0])}
 function unionMinutes(intervals){let n=0,end=-1;for(const [a,b] of intervals){if(a>=end){n+=b-a;end=b}else if(b>end){n+=b-end;end=b}}return Math.round(n)}
 const pt=(r,min)=>{let a=min/MINUTES*Math.PI*2-Math.PI/2;return [220+r*Math.cos(a),220+r*Math.sin(a)]};
-const arcPath=(s,e,ro,ri)=>{s=Math.max(0,s);e=Math.min(MINUTES,e);if(e<=s)return '';if(e-s>=MINUTES)e=s+MINUTES-.001;const [x1,y1]=pt(ro,s),[x2,y2]=pt(ro,e),[x3,y3]=pt(ri,e),[x4,y4]=pt(ri,s),large=(e-s>MINUTES/2)?1:0;return `M${x1.toFixed(2)},${y1.toFixed(2)} A${ro},${ro} 0 ${large} 1 ${x2.toFixed(2)},${y2.toFixed(2)} L${x3.toFixed(2)},${y3.toFixed(2)} A${ri},${ri} 0 ${large} 0 ${x4.toFixed(2)},${y4.toFixed(2)} Z`};
-function renderDial(locals,google,win){let markup=`<circle cx="220" cy="220" r="191" fill="none" stroke="#2e405c" stroke-width="3"/><circle cx="220" cy="220" r="174" fill="none" stroke="#26374f" stroke-width="49"/><circle cx="220" cy="220" r="112" fill="none" stroke="#273d53" stroke-width="17"/><circle cx="220" cy="220" r="97" fill="#101a2a" stroke="#30415a" stroke-width="1"/>`;
- for(let i=0;i<16;i++){const [x1,y1]=pt(i%4===0?183:188,i*60),[x2,y2]=pt(i%4===0?198:195,i*60);markup+=`<line class="tick ${i%4===0?'major':''}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`;if(i%4===0){let [x,y]=pt(211,i*60);markup+=`<text class="ring-label" x="${x}" y="${y}">${i===0?'0/16':i}</text>`}else if(i%2===0){let[x,y]=pt(211,i*60);markup+=`<text class="minor-label" x="${x}" y="${y}">${i}</text>`}};
+const DIAL_RADIUS=191,DIAL_CENTER_RADIUS=91;
+const dialTimeFormat=new Intl.DateTimeFormat('en-US',{timeZone:ZONE,hour:'numeric',minute:'2-digit',hour12:true});
+let pinnedMinute=null,pinnedDate=null,previewMinute=null,dialPointer=null;
+let trackedDay=activeDate();
+
+function arcPath(start,end,outer,inner){
+ const s=Math.max(0,start),e=Math.min(MINUTES,end);
+ if(e<=s)return '';
+ if(e-s===MINUTES)return arcPath(s,s+MINUTES/2,outer,inner)+arcPath(s+MINUTES/2,e,outer,inner);
+ const [x1,y1]=pt(outer,s),[x2,y2]=pt(outer,e),[x3,y3]=pt(inner,e),[x4,y4]=pt(inner,s);
+ const large=Number(e-s>MINUTES/2);
+ return `M${x1},${y1} A${outer},${outer} 0 ${large} 1 ${x2},${y2} L${x3},${y3} A${inner},${inner} 0 ${large} 0 ${x4},${y4} Z`;
+}
+
+const timeOnDial=(win,minute)=>dialTimeFormat.format(new Date(+win.start+minute*60000));
+
+function renderDial(locals,google,win){
+ if(pinnedDate!==selectedDate)pinnedMinute=null;
+ previewMinute=null;
+ let markup=`<g id="dialSurface"><circle cx="220" cy="220" r="191" fill="#1b2a42" stroke="#475d7b" stroke-width="2"/>`;
+ for(let hour=0;hour<16;hour++){
+  markup+=`<path class="hour-sector" d="${arcPath(hour*60,(hour+1)*60,DIAL_RADIUS,DIAL_CENTER_RADIUS)}" fill="${hour%2?'#233550':'#1c2d46'}"/>`;
+ }
+ for(let hour=0;hour<16;hour++){
+  const [x,y]=pt(DIAL_RADIUS,hour*60);
+  markup+=`<line class="tick ${hour%4===0?'major':''}" x1="220" y1="220" x2="${x}" y2="${y}"/>`;
+ }
  let laneEnds=[-1,-1,-1];for(const e of locals){const s=Math.max(0,(e.startMs-win.start.getTime())/60000),end=Math.min(MINUTES,(e.endMs-win.start.getTime())/60000);let lane=laneEnds.findIndex(x=>x<=s);if(lane<0)lane=2;laneEnds[lane]=Math.max(laneEnds[lane],end);const rr=[[175,153],[151,132],[130,123]][lane],color=CATS[e.category]?.color||CATS.other.color;markup+=`<path tabindex="0" role="button" aria-label="${safe(e.title)}" class="event-sector ${e.done?'done':''}" d="${arcPath(s,end,rr[0],rr[1])}" fill="${color}" data-event-id="${safe(e.id)}"><title>${safe(e.title)} · ${minsToText(e.durationMin)}</title></path>`}
  const googleLaneEnds=[-1,-1,-1];
  for(const e of google){if(e.allDay)continue;const s=(e.startMs-win.start.getTime())/60000,end=(e.endMs-win.start.getTime())/60000;let lane=googleLaneEnds.findIndex(value=>value<=Math.max(0,s));if(lane<0)lane=2;googleLaneEnds[lane]=Math.max(googleLaneEnds[lane],end);const outer=119-lane*6;markup+=`<path tabindex="0" role="button" aria-label="${safe(e.title)}" class="calendar-sector" d="${arcPath(s,end,outer,outer-5)}" fill="${safe(e.color||'#75cbd5')}" data-google-event="${safe(e.id)}"><title>${safe(e.title)} · Google Calendar</title></path>`}
- markup+=`<circle class="day-progress" id="dayProgress" cx="220" cy="220" r="191" fill="none" stroke-width="3.8" stroke-linecap="round" transform="rotate(-90 220 220)" stroke-dasharray="0 1200"/><line class="current-hand" id="currentHand" x1="220" y1="220" x2="220" y2="62"/><circle class="current-dot" id="currentDot" cx="220" cy="220" r="4"/>`;
+ markup+=`</g>
+ <defs><clipPath id="elapsedClip"><path id="elapsedShape"/></clipPath></defs>
+ <use id="elapsedOverlay" href="#dialSurface" clip-path="url(#elapsedClip)" aria-hidden="true"/>
+ <path id="hourHighlight"/>
+ <circle class="clock-disc" cx="220" cy="220" r="91"/>`;
+ for(let hour=0;hour<16;hour++){
+  const [x,y]=pt(209,hour*60);
+  const label=timeOnDial(win,hour*60);
+  markup+=`<text class="hour-label ${hour%4===0?'major':''}" x="${x}" y="${y}">${label}</text>`;
+ }
+ markup+=`<line id="selectionHand" class="selection-hand"/>
+ <g id="currentIndicator" aria-hidden="true">
+  <line id="currentHand" class="current-hand"/>
+  <circle id="currentDot" class="current-dot" r="6"/>
+ </g>`;
  $('dial').innerHTML=markup;
- $('dial').querySelectorAll('[data-event-id]').forEach(el=>{const run=()=>openEvent(state.events.find(e=>e.id===el.dataset.eventId));el.addEventListener('click',run);el.addEventListener('keydown',ev=>{if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();run()}})});
- $('dial').querySelectorAll('[data-google-event]').forEach(el=>el.addEventListener('click',()=>toast('Событие Google Calendar доступно только для просмотра')));
- $('dial').onclick=ev=>{if(ev.target.closest('[data-event-id],[data-google-event]'))return;const rect=$('dial').getBoundingClientRect(),x=(ev.clientX-rect.left)*440/rect.width-220,y=(ev.clientY-rect.top)*440/rect.height-220,r=Math.hypot(x,y);if(r<122||r>182)return;let angle=(Math.atan2(y,x)+Math.PI/2+Math.PI*2)%(Math.PI*2),offset=Math.round(angle/(Math.PI*2)*MINUTES/15)*15;offset=Math.min(offset,959);openEvent({title:'',category:'personal',durationMin:60,startMode:'relative',offsetMin:offset,start:state.wake,repeat:{type:'daily'},doneDates:[],skipDates:[]})};tickClock();
+ $('dial').querySelectorAll('[data-event-id],[data-google-event]').forEach(el=>{
+  el.addEventListener('keydown',event=>{
+   if(event.key!=='Enter'&&event.key!==' ')return;
+   event.preventDefault();
+   if(el.dataset.eventId)openEvent(state.events.find(item=>item.id===el.dataset.eventId));
+   else toast('Событие Google Calendar доступно только для просмотра');
+  });
+ });
+ updateDialSelection();
+ tickClock();
 }
-function tickClock(){const now=new Date();const p=now.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true,timeZone:ZONE}).split(' ');$('clockTime').textContent=p[0];$('clockAmPm').textContent=p[1]||'';
- const win=wakeWindow();const frac=(now-win.start)/(win.end-win.start),cl=Math.max(0,Math.min(1,frac));let val=MINUTES*(Number.isFinite(frac)?cl:0),[hx,hy]=pt(177,val);
- if($('currentHand')){$('currentHand').setAttribute('x2',hx);$('currentHand').setAttribute('y2',hy);$('currentHand').style.display=selectedDate===activeDate(now)&&frac>=0&&frac<=1?'':'none';}
- const prog=$('dayProgress');if(prog){prog.setAttribute('stroke-dasharray',`${(191*2*Math.PI*cl).toFixed(2)} 1200`);prog.style.display=selectedDate===activeDate(now)?'':'none'}
- $('awakeRemaining').textContent=selectedDate===activeDate(now)?(frac<0?'День ещё не начался':frac>1?'16 часов завершены':`${minsToText((1-cl)*MINUTES)} до сна`):'Режим живых часов';
- $('elapsedLabel').textContent=selectedDate===activeDate(now)?`Пройдено ${minsToText(cl*MINUTES)} из 16 ч`:'Выбран другой день';
+
+function setRadialLine(line,minute,inner,outer){
+ const [x1,y1]=pt(inner,minute),[x2,y2]=pt(outer,minute);
+ for(const [key,value] of Object.entries({x1,y1,x2,y2}))line.setAttribute(key,value);
+}
+
+function updateDialSelection(){
+ const minute=previewMinute??pinnedMinute;
+ const highlight=$('hourHighlight'),hand=$('selectionHand');
+ if(!highlight)return;
+ const hour=Math.floor((minute??0)/60);
+ highlight.setAttribute('d',minute===null?'':arcPath(hour*60,(hour+1)*60,DIAL_RADIUS,DIAL_CENTER_RADIUS));
+ hand.style.display=minute===null?'none':'';
+ if(minute!==null)setRadialLine(hand,minute,DIAL_CENTER_RADIUS,DIAL_RADIUS);
+ const isPreview=previewMinute!==null&&previewMinute!==pinnedMinute;
+ $('dialHint').textContent=minute===null?'Коснись кольца, чтобы узнать время':
+  `${isPreview?'На циферблате':'Выбрано'} · ${timeOnDial(wakeWindow(),minute)}`;
+}
+
+function minuteAtPointer(event){
+ const rect=$('dial').getBoundingClientRect();
+ const x=(event.clientX-rect.left)*440/rect.width-220;
+ const y=(event.clientY-rect.top)*440/rect.height-220;
+ const radius=Math.hypot(x,y);
+ if(radius<DIAL_CENTER_RADIUS||radius>220)return null;
+ const angle=(Math.atan2(y,x)+Math.PI*2.5)%(Math.PI*2);
+ return Math.min(MINUTES-1,Math.floor(angle/(Math.PI*2)*MINUTES+1e-9));
+}
+
+function setupDialPointer(){
+ const dial=$('dial');
+ dial.addEventListener('pointerdown',event=>{
+  if(!event.isPrimary||event.button!==0)return;
+  const minute=minuteAtPointer(event);
+  if(minute===null)return;
+  dialPointer={id:event.pointerId,minute};
+  dial.setPointerCapture(event.pointerId);
+  previewMinute=minute;
+  updateDialSelection();
+ });
+ dial.addEventListener('pointermove',event=>{
+  if(!event.isPrimary||(event.pointerType!=='mouse'&&dialPointer?.id!==event.pointerId))return;
+  const minute=minuteAtPointer(event);
+  if(dialPointer?.id===event.pointerId&&minute!==null)dialPointer.minute=minute;
+  if(previewMinute===minute)return;
+  previewMinute=minute;
+  updateDialSelection();
+ });
+ dial.addEventListener('pointerup',event=>{
+  if(dialPointer?.id!==event.pointerId)return;
+  pinnedMinute=minuteAtPointer(event)??dialPointer.minute;
+  pinnedDate=selectedDate;
+  dialPointer=null;
+  previewMinute=null;
+  updateDialSelection();
+ });
+ const cancel=()=>{
+  dialPointer=null;
+  previewMinute=null;
+  updateDialSelection();
+ };
+ dial.addEventListener('pointercancel',cancel);
+ dial.addEventListener('pointerleave',()=>{if(!dialPointer)cancel()});
+ dial.addEventListener('lostpointercapture',()=>{if(dialPointer)cancel()});
+}
+
+function tickClock(){
+ const now=new Date(),today=activeDate(now);
+ if(today!==trackedDay){
+  const followToday=selectedDate===trackedDay;
+  trackedDay=today;
+  if(followToday){
+   selectedDate=today;
+   render();
+   if(googleAccessToken)syncGoogle(false);
+   return;
+  }
+ }
+ const label=dialTimeFormat.format(now);
+ const [time,period]=label.split(' ');
+ $('clockTime').textContent=time;
+ $('clockAmPm').textContent=period;
+ const win=wakeWindow(),minutes=(now-win.start)/60000;
+ const isToday=selectedDate===today;
+ const elapsed=isToday?Math.max(0,Math.min(MINUTES,minutes)):0;
+ $('elapsedShape')?.setAttribute('d',arcPath(0,elapsed,DIAL_RADIUS,DIAL_CENTER_RADIUS));
+ const indicator=$('currentIndicator');
+ if(indicator){
+  indicator.style.display=isToday&&minutes>=0&&minutes<MINUTES?'':'none';
+  if(indicator.style.display!=='none'){
+   setRadialLine($('currentHand'),minutes,DIAL_CENTER_RADIUS,DIAL_RADIUS);
+   const [x,y]=pt(DIAL_RADIUS,minutes);
+   $('currentDot').setAttribute('cx',x);
+   $('currentDot').setAttribute('cy',y);
+  }
+ }
+ $('awakeRemaining').textContent=!isToday?'Текущее время':minutes<0?'День ещё не начался':minutes>=MINUTES?'16 часов завершены':`${minsToText(MINUTES-elapsed)} до сна`;
+ $('elapsedLabel').textContent=isToday?`Прошло ${minsToText(Math.floor(elapsed))} из 16 ч`:'Выбран другой день';
 }
 function render(){const win=wakeWindow(),locals=getLocal(win),google=getGoogle(win),all=[...locals,...google];$('dateLabel').textContent=fromDate(selectedDate).toLocaleDateString('ru-RU',{weekday:'long',day:'numeric',month:'long',timeZone:'UTC'});$('dayRange').textContent=`${clockStr(win.start)} → ${clockStr(win.end)} · 16 часов`;renderDial(locals,google,win);
  const occupied=unionMinutes(intervals(all,win));$('plannedStat').textContent=minsToText(occupied);$('freeStat').textContent=minsToText(MINUTES-occupied);$('doneStat').textContent=minsToText(unionMinutes(intervals(locals.filter(x=>x.done),win)));$('eventSubtitle').textContent=`${locals.length} своих · ${google.length} из Google Calendar`;
@@ -142,7 +279,7 @@ async function syncGoogle(showToast=true){
   if(showToast)toast(`Получено ${events.length} событий из Google Calendar`);
  }catch(error){if(isCurrent())googleError(error)}
 }
-function setup(){const events=[['prevBtn','click',()=>dayMove(-1)],['nextBtn','click',()=>dayMove(1)],['todayBtn','click',()=>{selectedDate=activeDate();render();if(googleAccessToken)syncGoogle(false)}],['addBtn','click',()=>openEvent({title:'',category:'family',durationMin:60,startMode:'relative',offsetMin:0,start:state.wake,repeat:{type:'daily'},doneDates:[],skipDates:[]})],['settingsBtn','click',()=>{$('wakeField').value=state.wake;$('clientIdField').value=state.google.clientId;renderCalendarChooser();modal('settingsModal',true)}],['eventForm','submit',onSaveEvent],['repeatField','change',renderRepeatFields],['startMode','change',renderModeFields],['exportBtn','click',exportData],['exportFooter','click',exportData],['importBtn','click',()=>$('importFile').click()],['importFile','change',ev=>{if(ev.target.files[0])importData(ev.target.files[0]);ev.target.value=''}],['connectGoogleBtn','click',startGoogleAuth],['syncGoogleBtn','click',()=>syncGoogle()],['clearCalendarBtn','click',()=>{googleSyncVersion++;state.google.cache={};save();render();setGoogleMessage('Кэш Google очищен');toast('Кэш Google очищен')}]];for(const [id,t,f]of events)$(id).addEventListener(t,f);
+function setup(){setupDialPointer();const events=[['prevBtn','click',()=>dayMove(-1)],['nextBtn','click',()=>dayMove(1)],['todayBtn','click',()=>{selectedDate=activeDate();render();if(googleAccessToken)syncGoogle(false)}],['addBtn','click',()=>openEvent({title:'',category:'family',durationMin:Math.min(60,MINUTES-(pinnedMinute??0)),startMode:'relative',offsetMin:pinnedMinute??0,start:state.wake,repeat:{type:'daily'},doneDates:[],skipDates:[]})],['settingsBtn','click',()=>{$('wakeField').value=state.wake;$('clientIdField').value=state.google.clientId;renderCalendarChooser();modal('settingsModal',true)}],['eventForm','submit',onSaveEvent],['repeatField','change',renderRepeatFields],['startMode','change',renderModeFields],['exportBtn','click',exportData],['exportFooter','click',exportData],['importBtn','click',()=>$('importFile').click()],['importFile','change',ev=>{if(ev.target.files[0])importData(ev.target.files[0]);ev.target.value=''}],['connectGoogleBtn','click',startGoogleAuth],['syncGoogleBtn','click',()=>syncGoogle()],['clearCalendarBtn','click',()=>{googleSyncVersion++;state.google.cache={};save();render();setGoogleMessage('Кэш Google очищен');toast('Кэш Google очищен')}]];for(const [id,t,f]of events)$(id).addEventListener(t,f);
  $('deleteEventBtn').addEventListener('click',()=>{const id=$('eventId').value;if(!id||!confirm('Удалить событие и все его повторения?'))return;state.events=state.events.filter(e=>e.id!==id);save();modal('eventModal',false);render();toast('Событие удалено')});
  $('wakeField').addEventListener('change',e=>{if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(e.target.value))return;state.wake=e.target.value;googleSyncVersion++;state.google.cache={};save();render();if(googleAccessToken)syncGoogle(false);toast('Время пробуждения обновлено')});
  $('clientIdField').addEventListener('change',e=>{const v=e.target.value.trim();if(v!==state.google.clientId){state.google.clientId=v;googleSyncVersion++;state.google.selectedIds=[];state.google.selectionSet=false;state.google.calendars=[];state.google.cache={};googleAccessToken='';googleExpire=0;renderCalendarChooser();setGoogleMessage('Не подключено');save();render()}});
