@@ -1,5 +1,5 @@
 const PREFIX = 'studio1037-phaze-';
-const CACHE = PREFIX + 'v0.1.2-r2';
+const CACHE = PREFIX + 'v0.1.2-r3';
 const ASSETS = ['./', './index.html', './style.css', './app.js', './manifest.webmanifest', './icon-192.svg', './icon-512.svg'];
 const assetURLs = new Set(ASSETS.map(path => new URL(path, self.registration.scope).href));
 
