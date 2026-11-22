@@ -39,7 +39,7 @@
  <div id="eventList" class="event-list"></div>
  <section class="legend"><h3>Категории</h3><div class="legend-items"><span><i style="background:#5d9aff"></i> Работа</span><span><i style="background:#f1b85b"></i> Семья</span><span><i style="background:#ad91fa"></i> Ритуалы</span><span><i style="background:#67d8b0"></i> Личное</span><span><i style="background:#fa829a"></i> Отдых</span></div></section>
 </main>
-<footer>PHAZE v0.1.2 · Данные сохраняются в этом браузере · <button id="exportFooter">Резервная копия</button></footer>
+<footer>PHAZE v0.2-dev · Данные сохраняются в этом браузере · <button id="exportFooter">Резервная копия</button></footer>
 </div>
 <div class="modal-overlay" id="eventModal" hidden><section class="modal" role="dialog" aria-modal="true" aria-labelledby="eventModalTitle"><div class="modal-head"><h2 id="eventModalTitle">Новое событие</h2><button class="modal-close" data-close="eventModal" aria-label="Закрыть">×</button></div>
  <form id="eventForm"><input id="eventId" type="hidden"><label>Название<input id="titleField" required maxlength="80" placeholder="Например: Развезти детей"></label>
@@ -54,13 +54,48 @@
  <label id="singleRow" class="conditional" hidden>Дата события<input id="singleField" type="date"></label>
  <div class="modal-actions"><button type="button" id="deleteEventBtn" class="danger-button" hidden>Удалить</button><button type="submit" class="primary-button">Сохранить событие</button></div></form></section></div>
 <div class="modal-overlay" id="settingsModal" hidden><section class="modal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle"><div class="modal-head"><h2 id="settingsTitle">Настройки PHAZE</h2><button class="modal-close" data-close="settingsModal" aria-label="Закрыть">×</button></div>
- <div class="settings-content"><label>Обычное время пробуждения<input id="wakeField" type="time" value="07:00"></label><p class="tip">Начало круга = пробуждение; конец = через 16 часов. События «от пробуждения» сдвигаются вместе с началом дня.</p>
+ <div class="settings-content">
+ <form id="wakeForm">
+  <div class="form-grid">
+   <label>Пробуждение в будни<input id="wakeField" type="time" required></label>
+   <label>Пробуждение в выходные<input id="weekendWakeField" type="time" required></label>
+  </div>
+  <fieldset id="wakeWeekdays"><legend class="field-caption">Дни, которые считаются буднями</legend>
+   <div class="weekday-checks">
+    <label><input type="checkbox" value="0">Вс</label><label><input type="checkbox" value="1">Пн</label>
+    <label><input type="checkbox" value="2">Вт</label><label><input type="checkbox" value="3">Ср</label>
+    <label><input type="checkbox" value="4">Чт</label><label><input type="checkbox" value="5">Пт</label>
+    <label><input type="checkbox" value="6">Сб</label>
+   </div>
+  </fieldset>
+  <button class="secondary-button" type="submit">Сохранить время пробуждения</button>
+ </form>
  <div class="settings-divider"></div><h3>Google Calendar</h3><p class="tip">Чтение событий из твоих календарей без изменения их содержимого. Для авторизации в опубликованной PWA нужен OAuth Client ID собственного Google Cloud проекта.</p>
  <label>Google OAuth Client ID<input id="clientIdField" type="text" spellcheck="false" placeholder="...apps.googleusercontent.com"></label><div class="button-row"><button type="button" id="connectGoogleBtn" class="secondary-button">Подключить Google</button><button type="button" id="syncGoogleBtn" class="secondary-button">Обновить</button></div><p id="googleMessage" class="tip">Не подключено</p>
  <div id="calendarChooser" class="calendar-chooser" hidden><h4>Какие календари показывать</h4><div id="calendarOptions"></div></div>
+ <div class="settings-divider"></div><h3>Синхронизация устройств</h3>
+ <p id="syncMessage" class="tip" role="status">Облачный сервер пока не настроен. Данные сохраняются на устройстве.</p>
+ <div id="syncControls" hidden>
+  <label>Email для входа<input id="syncEmail" type="email" autocomplete="email" required></label>
+  <label>Код из письма<input id="syncCode" autocomplete="one-time-code" inputmode="numeric" pattern="[0-9]{6,8}" required></label>
+  <p class="tip">После входа PHAZE отправит твои события и расписание пробуждения в облако этого аккаунта.</p>
+  <div class="button-row">
+   <button id="syncSendCode" class="secondary-button">Получить код</button>
+   <button id="syncSignIn" class="secondary-button">Войти и синхронизировать</button>
+   <button id="syncNow" class="secondary-button">Синхронизировать сейчас</button>
+   <button id="syncSignOut" class="secondary-button">Отключить</button>
+  </div>
+ </div>
+ <div id="syncConflict" hidden>
+  <button id="syncExportConflict" class="secondary-button">Скачать обе копии JSON</button>
+  <button id="syncKeepLocal" class="secondary-button">Оставить изменения устройства</button>
+  <button id="syncKeepRemote" class="secondary-button">Оставить облачные изменения</button>
+ </div>
  <div class="settings-divider"></div><h3>Данные</h3><p class="tip">Сохраняются локально на этом устройстве. Для переноса между устройствами используй экспорт и импорт.</p><div class="button-row"><button type="button" id="exportBtn" class="secondary-button">Экспорт JSON</button><button type="button" id="importBtn" class="secondary-button">Импорт JSON</button></div><input id="importFile" type="file" accept="application/json,.json" hidden><button id="clearCalendarBtn" class="text-danger" type="button">Очистить кэш Google Calendar</button>
  </div></section></div>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="sync-config.js" defer></script>
+<script src="sync.js" defer></script>
 <script src="app.js" defer></script>
 </body></html>
