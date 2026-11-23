@@ -228,7 +228,12 @@ function render(){const win=wakeWindow(),locals=getLocal(win),google=getGoogle(w
  let html='';for(const e of [...all].sort((a,b)=>(a.allDay?-Infinity:a.startMs)-(b.allDay?-Infinity:b.startMs))){const isG=e.source==='google',from=e.allDay?'Весь день':clockStr(new Date(e.startMs)),to=e.allDay?'':clockStr(new Date(e.endMs)),color=isG?(e.color||'#75cbd5'):(CATS[e.category]?.color||CATS.other.color);const cat=isG?'Google Calendar':(CATS[e.category]?.name||'Другое');html+=`<div class="event-item ${e.done?'completed':''}"><i class="event-color" style="background:${safe(color)}"></i><div class="event-text"><div class="event-title">${safe(e.title)}</div><div class="event-meta">${from}${to?'–'+to:''} · ${cat}${!isG&&e.repeat.type!=='none'?' · ↻':''}</div></div><div class="event-actions">${isG?'':`<button class="event-check ${e.done?'checked':''}" aria-label="${e.done?'Отменить выполнение':'Отметить выполнение'}" data-done="${safe(e.id)}" data-occurrence="${safe(e.occurrenceDate)}">${e.done?'✓':'○'}</button><button class="event-edit" aria-label="Редактировать" data-edit="${safe(e.id)}">✎</button>`}</div></div>`}
  $('eventList').innerHTML=html||`<div class="empty-events">В этом дне пока нет событий.<br>Добавь первое событие и раскрась время.</div>`;
  $('eventList').querySelectorAll('[data-edit]').forEach(b=>b.addEventListener('click',()=>openEvent(state.events.find(e=>e.id===b.dataset.edit))));$('eventList').querySelectorAll('[data-done]').forEach(b=>b.addEventListener('click',()=>{const e=state.events.find(x=>x.id===b.dataset.done);if(!e)return;e.doneDates=e.doneDates||[];const date=b.dataset.occurrence;e.doneDates=e.doneDates.includes(date)?e.doneDates.filter(x=>x!==date):[...e.doneDates,date];save();render()}));
- $('cloudStatus').textContent=googleAccessToken&&Date.now()<googleExpire?'● Google подключён':'● Локальный режим'+(google.length?' · кэш Google':'');}
+ updateCloudStatus(google.length);}
+function updateCloudStatus(googleCount=getGoogle(wakeWindow()).length){
+ const base=state.syncMeta?.enabled?'● Облачная синхронизация включена':'● Локальный режим';
+ const extra=googleAccessToken&&Date.now()<googleExpire?' · Google подключён':googleCount?' · кэш Google':'';
+ $('cloudStatus').textContent=base+extra;
+}
 function modal(id,show){$(id).hidden=!show;document.body.style.overflow=show?'hidden':''}
 function renderRepeatFields(){const r=$('repeatField').value;for(const id of ['weekRow','intervalRow','datesRow','singleRow'])$(id).hidden=!(id===({weekly:'weekRow',interval:'intervalRow',dates:'datesRow',none:'singleRow'}[r]));}
 function renderModeFields(){const rel=$('startMode').value==='relative';$('relativeRow').hidden=!rel;$('clockRow').hidden=rel}
@@ -356,7 +361,7 @@ function applySyncDocument(value,meta){
  }
  state.syncMeta=meta;
  save();
- if(changed)render();
+ if(changed)render();else updateCloudStatus();
 }
 function setup(){setupDialPointer();const events=[['prevBtn','click',()=>dayMove(-1)],['nextBtn','click',()=>dayMove(1)],['todayBtn','click',()=>{selectedDate=activeDate();render();if(googleAccessToken)syncGoogle(false)}],['addBtn','click',()=>openEvent({title:'',category:'family',durationMin:Math.min(60,MINUTES-(pinnedMinute??0)),startMode:'relative',offsetMin:pinnedMinute??0,start:wakeFor(selectedDate),repeat:{type:'daily'},doneDates:[],skipDates:[]})],['settingsBtn','click',()=>{renderWakeSettings();$('clientIdField').value=state.google.clientId;renderCalendarChooser();modal('settingsModal',true)}],['eventForm','submit',onSaveEvent],['repeatField','change',renderRepeatFields],['startMode','change',renderModeFields],['exportBtn','click',exportData],['exportFooter','click',exportData],['importBtn','click',()=>$('importFile').click()],['importFile','change',ev=>{if(ev.target.files[0])importData(ev.target.files[0]);ev.target.value=''}],['connectGoogleBtn','click',startGoogleAuth],['syncGoogleBtn','click',()=>syncGoogle()],['clearCalendarBtn','click',()=>{googleSyncVersion++;state.google.cache={};save();render();setGoogleMessage('Кэш Google очищен');toast('Кэш Google очищен')}]];for(const [id,t,f]of events)$(id).addEventListener(t,f);
  $('deleteEventBtn').addEventListener('click',()=>{const id=$('eventId').value;if(!id||!confirm('Удалить событие и все его повторения?'))return;state.events=state.events.filter(e=>e.id!==id);save();modal('eventModal',false);render();toast('Событие удалено')});
