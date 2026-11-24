@@ -17,7 +17,7 @@
 <div class="app-shell">
 <header class="top">
  <div><div class="eyebrow">STUDIO1037 / ВРЕМЯ ВИДНО</div><div class="brand">PHAZE<span class="brand-dot">.</span></div></div>
- <button id="settingsBtn" class="icon-button" aria-label="Настройки" title="Настройки">⚙</button>
+ <div class="header-actions"><button id="modeClockBtn" class="mode-button" type="button" aria-label="Перейти в режим часов">◷ Циферблат</button><button id="settingsBtn" class="icon-button" aria-label="Настройки" title="Настройки">⚙</button></div>
 </header>
 <main>
  <section class="intro"><h1>Твои 16 часов.</h1><p>Не просто расписание. Форма твоего дня.</p></section>
@@ -29,10 +29,24 @@
  </section>
  <div class="today-row"><button id="todayBtn" class="pill-link">Сегодня</button><span id="cloudStatus" class="sync-state">● Локальный режим</span></div>
  <section class="dial-card" aria-label="16-часовой циферблат">
+   <div class="clock-toolbar" aria-label="Управление режимом циферблата">
+    <div class="clock-toolbar-title"><span class="clock-eyebrow">PHAZE / CLOCK</span><strong>Твои 16 часов</strong></div>
+    <div class="clock-actions">
+     <button id="clockWakeBtn" class="clock-action" type="button" aria-pressed="false" title="Держать экран включённым">☀ Экран</button>
+     <button id="clockFullscreenBtn" class="clock-action" type="button" title="Полный экран">⛶ Экран</button>
+     <button id="modePlannerBtn" class="clock-action clock-exit" type="button" aria-label="Вернуться к планировщику">✕ План</button>
+    </div>
+   </div>
    <div class="dial-wrap"><svg id="dial" viewBox="0 0 440 440" role="img" aria-label="Круг 16 часов, цветные сегменты событий"></svg>
-    <div class="dial-center"><div class="center-kicker">СЕЙЧАС</div><div id="clockTime" class="clock-time">--:--</div><div id="clockAmPm" class="clock-ampm">--</div><div class="center-line"></div><div id="awakeRemaining" class="remaining">16ч 00м до сна</div></div>
+    <div class="dial-center"><div id="centerKicker" class="center-kicker">СЕЙЧАС</div><div id="clockTime" class="clock-time">--:--</div><div id="clockAmPm" class="clock-ampm">--</div><div class="center-line"></div><div id="awakeRemaining" class="remaining">16ч 00м до сна</div></div>
    </div>
    <div class="dial-footer"><span><i class="dot dot-past"></i><span id="elapsedLabel">Пройдено 0 из 16 ч</span></span><span id="dialHint">Коснись кольца, чтобы узнать время</span></div>
+   <div class="clock-readout" aria-live="off">
+    <span id="clockCycleDate" class="clock-cycle-date">Сегодня</span>
+    <strong id="clockMessage" class="clock-message">Твои 16 часов</strong>
+    <span id="clockDeadline" class="clock-deadline">Время сна · --:--</span>
+    <small id="clockScreenHint" class="clock-screen-hint">Для горизонтального режима поверни устройство. На iPhone установи PWA через Safari.</small>
+   </div>
  </section>
  <section class="stats" aria-label="Статистика дня"><div><span class="stat-label">Запланировано</span><strong id="plannedStat">0 ч</strong></div><div><span class="stat-label">Свободно</span><strong id="freeStat">16 ч</strong></div><div><span class="stat-label">Отмечено</span><strong id="doneStat">0 ч</strong></div></section>
  <section class="events-header"><div><h2>План дня</h2><p id="eventSubtitle">Раскрась время и увидь свой день</p></div><button id="addBtn" class="primary-button">+ Событие</button></section>
