@@ -1,5 +1,5 @@
 const PREFIX = 'studio1037-phaze-';
-const CACHE = PREFIX + 'v0.2-dev-20261123-otpqa';
+const CACHE = PREFIX + 'v0.2-dev-20261124-clock';
 const ASSETS = ['./', './index.html', './style.css', './app.js', './sync-config.js', './sync.js', './manifest.webmanifest', './icon-192.svg', './icon-512.svg'];
 const assetURLs = new Set(ASSETS.map(path => new URL(path, self.registration.scope).href));
 

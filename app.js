@@ -1,5 +1,11 @@
 (()=>{'use strict';
 const STORE='phaze-v0.1.0',MINUTES=960;
+const VIEW_STORE='phaze-view-mode',WAKE_LOCK_STORE='phaze-clock-wake-lock';
+let viewMode='planner',wakeLockWanted=false,wakeLockSentinel=null;
+try{
+ viewMode=localStorage.getItem(VIEW_STORE)==='clock'?'clock':'planner';
+ wakeLockWanted=localStorage.getItem(WAKE_LOCK_STORE)==='yes';
+}catch{}
 const CATS={work:{name:'Работа',color:'#5d9aff'},family:{name:'Семья',color:'#f1b85b'},ritual:{name:'Ритуалы',color:'#ad91fa'},personal:{name:'Личное',color:'#67d8b0'},rest:{name:'Отдых',color:'#fa829a'},other:{name:'Другое',color:'#aab5c7'}};
 const $=id=>document.getElementById(id);
 const ZONE='Asia/Jerusalem';
@@ -39,6 +45,10 @@ function wakeWindow(date=selectedDate){
 function activeDate(now=new Date()){
  const date=localDate(now),previous=shiftDate(date,-1);
  return now<wakeWindow(date).start&&now<wakeWindow(previous).end?previous:date;
+}
+function clockCycleDate(now=new Date()){
+ const date=localDate(now);
+ return now<wakeWindow(date).start?shiftDate(date,-1):date;
 }
 selectedDate=activeDate();
 const clockStr=d=>d.toLocaleTimeString('ru-RU',{timeZone:ZONE,hour:'2-digit',minute:'2-digit',hour12:false});
@@ -100,6 +110,7 @@ function renderDial(locals,google,win){
  markup+=`</g>
  <defs><clipPath id="elapsedClip"><path id="elapsedShape"/></clipPath></defs>
  <use id="elapsedOverlay" href="#dialSurface" clip-path="url(#elapsedClip)" aria-hidden="true"/>
+ <circle id="sleepOvertimeOverlay" cx="220" cy="220" r="141" fill="none" stroke="#f04b61" stroke-width="100" aria-hidden="true"/>
  <path id="hourHighlight"/>
  <circle class="clock-disc" cx="220" cy="220" r="91"/>`;
  for(let hour=0;hour<16;hour++){
@@ -115,7 +126,7 @@ function renderDial(locals,google,win){
  $('dial').innerHTML=markup;
  $('dial').querySelectorAll('[data-event-id],[data-google-event]').forEach(el=>{
   el.addEventListener('keydown',event=>{
-   if(event.key!=='Enter'&&event.key!==' ')return;
+   if(viewMode==='clock'||(event.key!=='Enter'&&event.key!==' '))return;
    event.preventDefault();
    if(el.dataset.eventId)openEvent(state.events.find(item=>item.id===el.dataset.eventId));
    else toast('Событие Google Calendar доступно только для просмотра');
@@ -144,6 +155,7 @@ function updateDialSelection(){
 }
 
 function minuteAtPointer(event){
+ if(viewMode==='clock')return null;
  const rect=$('dial').getBoundingClientRect();
  const x=(event.clientX-rect.left)*440/rect.width-220;
  const y=(event.clientY-rect.top)*440/rect.height-220;
@@ -190,9 +202,84 @@ function setupDialPointer(){
  dial.addEventListener('lostpointercapture',()=>{if(dialPointer)cancel()});
 }
 
+
+function updateWakeButton(){
+ const button=$('clockWakeBtn');
+ if(!button)return;
+ const supported=Boolean(navigator.wakeLock&&navigator.wakeLock.request);
+ button.disabled=!supported;
+ button.setAttribute('aria-pressed',String(Boolean(wakeLockSentinel)));
+ button.textContent=!supported?'☀ Недоступно':wakeLockSentinel?'✓ Экран включён':wakeLockWanted?'☀ Повторить':'☀ Экран вкл';
+}
+async function releaseWakeLock(){
+ const held=wakeLockSentinel;
+ wakeLockSentinel=null;
+ if(held)try{await held.release()}catch{}
+ updateWakeButton();
+}
+async function acquireWakeLock(){
+ if(viewMode!=='clock'||!wakeLockWanted||document.visibilityState==='hidden')return;
+ if(wakeLockSentinel){updateWakeButton();return}
+ if(!navigator.wakeLock?.request){updateWakeButton();toast('Держать экран включённым нельзя в этом браузере');return}
+ try{
+  const lock=await navigator.wakeLock.request('screen');
+  if(viewMode!=='clock'||!wakeLockWanted){await lock.release();return}
+  wakeLockSentinel=lock;
+  lock.addEventListener('release',()=>{if(wakeLockSentinel===lock){wakeLockSentinel=null;updateWakeButton()}});
+  updateWakeButton();
+ }catch(error){
+  wakeLockWanted=false;
+  try{localStorage.setItem(WAKE_LOCK_STORE,'no')}catch{}
+  updateWakeButton();
+  toast('Экран не удерживается: '+(error?.message||'ограничение устройства'));
+ }
+}
+function setWakeLockWanted(next){
+ wakeLockWanted=Boolean(next);
+ try{localStorage.setItem(WAKE_LOCK_STORE,wakeLockWanted?'yes':'no')}catch{}
+ if(wakeLockWanted)void acquireWakeLock();
+ else void releaseWakeLock();
+ updateWakeButton();
+}
+function updateFullscreenButton(){
+ const btn=$('clockFullscreenBtn');
+ if(!btn)return;
+ btn.hidden=!document.documentElement.requestFullscreen;
+ btn.textContent=document.fullscreenElement?'⇲ Свернуть':'⛶ Весь экран';
+}
+async function toggleFullscreen(){
+ try{
+  if(document.fullscreenElement)await document.exitFullscreen();
+  else if(document.documentElement.requestFullscreen)await document.documentElement.requestFullscreen();
+  else toast('Полный экран недоступен. Установи PHAZE на экран Домой.');
+ }catch(error){toast('Полный экран недоступен: '+(error?.message||'ограничение браузера'))}
+ updateFullscreenButton();
+}
+function applyViewMode(next){
+ viewMode=next==='clock'?'clock':'planner';
+ document.body.classList.toggle('clock-mode',viewMode==='clock');
+ try{localStorage.setItem(VIEW_STORE,viewMode)}catch{}
+ pinnedMinute=null;previewMinute=null;dialPointer=null;
+ if(viewMode==='clock'){
+  selectedDate=clockCycleDate();
+  render();
+  updateWakeButton();
+  if(wakeLockWanted)void acquireWakeLock();
+ }else{
+  selectedDate=activeDate();
+  trackedDay=selectedDate;
+  document.body.classList.remove('clock-overdue');
+  if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});
+  void releaseWakeLock();
+  render();
+ }
+}
 function tickClock(){
  const now=new Date(),today=activeDate(now);
- if(today!==trackedDay){
+ if(viewMode==='clock'){
+  const cycleDate=clockCycleDate(now);
+  if(selectedDate!==cycleDate){selectedDate=cycleDate;render();return}
+ }else if(today!==trackedDay){
   const followToday=selectedDate===trackedDay;
   trackedDay=today;
   if(followToday){
@@ -202,12 +289,11 @@ function tickClock(){
    return;
   }
  }
- const label=dialTimeFormat.format(now);
- const [time,period]=label.split(' ');
- $('clockTime').textContent=time;
- $('clockAmPm').textContent=period;
+ const label=dialTimeFormat.format(now),parts=label.split(' ');
+ $('clockTime').textContent=parts[0];
+ $('clockAmPm').textContent=parts[1]||'';
  const win=wakeWindow(),minutes=(now-win.start)/60000;
- const isToday=selectedDate===today;
+ const isToday=selectedDate===(viewMode==='clock'?clockCycleDate(now):today);
  const elapsed=isToday?Math.max(0,Math.min(MINUTES,minutes)):0;
  $('elapsedShape')?.setAttribute('d',arcPath(0,elapsed,DIAL_RADIUS,DIAL_CENTER_RADIUS));
  const indicator=$('currentIndicator');
@@ -220,8 +306,14 @@ function tickClock(){
    $('currentDot').setAttribute('cy',y);
   }
  }
- $('awakeRemaining').textContent=!isToday?'Текущее время':minutes<0?'День ещё не начался':minutes>=MINUTES?'16 часов завершены':`${minsToText(MINUTES-elapsed)} до сна`;
- $('elapsedLabel').textContent=isToday?`Прошло ${minsToText(Math.floor(elapsed))} из 16 ч`:'Выбран другой день';
+ const overdue=viewMode==='clock'&&isToday&&minutes>=MINUTES;
+ document.body.classList.toggle('clock-overdue',overdue);
+ $('centerKicker').textContent=overdue?'ПОРА СПАТЬ':'СЕЙЧАС';
+ $('awakeRemaining').textContent=overdue?'Иди спать · +'+minsToText(minutes-MINUTES):!isToday?'Текущее время':minutes<0?'День ещё не начался':minutes>=MINUTES?'16 часов завершены':minsToText(MINUTES-elapsed)+' до сна';
+ $('elapsedLabel').textContent=isToday?'Прошло '+minsToText(Math.floor(elapsed))+' из 16 ч':'Выбран другой день';
+ $('clockCycleDate').textContent=fromDate(selectedDate).toLocaleDateString('ru-RU',{weekday:'long',day:'numeric',month:'long',timeZone:'UTC'});
+ $('clockMessage').textContent=overdue?'Иди спать':minutes<0?'День ещё не начался':'Твои 16 часов';
+ $('clockDeadline').textContent=overdue?'Следующий подъём · '+clockStr(wakeWindow(shiftDate(selectedDate,1)).start):'Время сна · '+clockStr(win.end);
 }
 function render(){const win=wakeWindow(),locals=getLocal(win),google=getGoogle(win),all=[...locals,...google];$('dateLabel').textContent=fromDate(selectedDate).toLocaleDateString('ru-RU',{weekday:'long',day:'numeric',month:'long',timeZone:'UTC'});$('dayRange').textContent=`${clockStr(win.start)} → ${clockStr(win.end)} · 16 часов`;renderDial(locals,google,win);
  const occupied=unionMinutes(intervals(all,win));$('plannedStat').textContent=minsToText(occupied);$('freeStat').textContent=minsToText(MINUTES-occupied);$('doneStat').textContent=minsToText(unionMinutes(intervals(locals.filter(x=>x.done),win)));$('eventSubtitle').textContent=`${locals.length} своих · ${google.length} из Google Calendar`;
@@ -363,7 +455,16 @@ function applySyncDocument(value,meta){
  save();
  if(changed)render();else updateCloudStatus();
 }
-function setup(){setupDialPointer();const events=[['prevBtn','click',()=>dayMove(-1)],['nextBtn','click',()=>dayMove(1)],['todayBtn','click',()=>{selectedDate=activeDate();render();if(googleAccessToken)syncGoogle(false)}],['addBtn','click',()=>openEvent({title:'',category:'family',durationMin:Math.min(60,MINUTES-(pinnedMinute??0)),startMode:'relative',offsetMin:pinnedMinute??0,start:wakeFor(selectedDate),repeat:{type:'daily'},doneDates:[],skipDates:[]})],['settingsBtn','click',()=>{renderWakeSettings();$('clientIdField').value=state.google.clientId;renderCalendarChooser();modal('settingsModal',true)}],['eventForm','submit',onSaveEvent],['repeatField','change',renderRepeatFields],['startMode','change',renderModeFields],['exportBtn','click',exportData],['exportFooter','click',exportData],['importBtn','click',()=>$('importFile').click()],['importFile','change',ev=>{if(ev.target.files[0])importData(ev.target.files[0]);ev.target.value=''}],['connectGoogleBtn','click',startGoogleAuth],['syncGoogleBtn','click',()=>syncGoogle()],['clearCalendarBtn','click',()=>{googleSyncVersion++;state.google.cache={};save();render();setGoogleMessage('Кэш Google очищен');toast('Кэш Google очищен')}]];for(const [id,t,f]of events)$(id).addEventListener(t,f);
+function setup(){
+ setupDialPointer();
+ $('modeClockBtn').addEventListener('click',()=>applyViewMode('clock'));
+ $('modePlannerBtn').addEventListener('click',()=>applyViewMode('planner'));
+ $('clockWakeBtn').addEventListener('click',()=>setWakeLockWanted(!wakeLockWanted));
+ $('clockFullscreenBtn').addEventListener('click',toggleFullscreen);
+ document.addEventListener('fullscreenchange',updateFullscreenButton);
+ document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&viewMode==='clock'&&wakeLockWanted)void acquireWakeLock()});
+ updateWakeButton();updateFullscreenButton();
+ const events=[['prevBtn','click',()=>dayMove(-1)],['nextBtn','click',()=>dayMove(1)],['todayBtn','click',()=>{selectedDate=activeDate();render();if(googleAccessToken)syncGoogle(false)}],['addBtn','click',()=>openEvent({title:'',category:'family',durationMin:Math.min(60,MINUTES-(pinnedMinute??0)),startMode:'relative',offsetMin:pinnedMinute??0,start:wakeFor(selectedDate),repeat:{type:'daily'},doneDates:[],skipDates:[]})],['settingsBtn','click',()=>{renderWakeSettings();$('clientIdField').value=state.google.clientId;renderCalendarChooser();modal('settingsModal',true)}],['eventForm','submit',onSaveEvent],['repeatField','change',renderRepeatFields],['startMode','change',renderModeFields],['exportBtn','click',exportData],['exportFooter','click',exportData],['importBtn','click',()=>$('importFile').click()],['importFile','change',ev=>{if(ev.target.files[0])importData(ev.target.files[0]);ev.target.value=''}],['connectGoogleBtn','click',startGoogleAuth],['syncGoogleBtn','click',()=>syncGoogle()],['clearCalendarBtn','click',()=>{googleSyncVersion++;state.google.cache={};save();render();setGoogleMessage('Кэш Google очищен');toast('Кэш Google очищен')}]];for(const [id,t,f]of events)$(id).addEventListener(t,f);
  $('deleteEventBtn').addEventListener('click',()=>{const id=$('eventId').value;if(!id||!confirm('Удалить событие и все его повторения?'))return;state.events=state.events.filter(e=>e.id!==id);save();modal('eventModal',false);render();toast('Событие удалено')});
  $('wakeForm').addEventListener('submit',saveWakeSettings);
  $('clientIdField').addEventListener('change',e=>{const v=e.target.value.trim();if(v!==state.google.clientId){state.google.clientId=v;googleSyncVersion++;state.google.selectedIds=[];state.google.selectionSet=false;state.google.calendars=[];state.google.cache={};googleAccessToken='';googleExpire=0;renderCalendarChooser();setGoogleMessage('Не подключено');save();render()}});
@@ -371,7 +472,8 @@ function setup(){setupDialPointer();const events=[['prevBtn','click',()=>dayMove
  document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',()=>modal(b.dataset.close,false)));document.querySelectorAll('.modal-overlay').forEach(el=>el.addEventListener('mousedown',e=>{if(e.target===el)modal(el.id,false)}));document.addEventListener('keydown',e=>{if(e.key==='Escape'){modal('eventModal',false);modal('settingsModal',false)}});
  document.addEventListener('visibilitychange',()=>{if(!document.hidden){tickClock();render()}});
  if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./service-worker.js').catch(()=>{});
- render();setInterval(tickClock,1000);
+ if(viewMode==='clock')applyViewMode('clock');else render();
+ setInterval(tickClock,1000);
  window.PHAZESync?.start({
   read:syncDocument,readMeta:()=>state.syncMeta,apply:applySyncDocument,validate:validSyncDocument,
   isEditing:()=>!$('eventModal').hidden,
