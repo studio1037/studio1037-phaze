@@ -24,3 +24,71 @@
 #dial .event-sector, #dial .calendar-sector { cursor: crosshair; }
 .dial-footer .dot-past { background: #9a9da5; }
 #dialHint { text-align: right; }
+
+/* PHAZE Clock Mode v0.2: immersive 16-hour dial, portrait and landscape. */
+.header-actions{display:flex;align-items:center;gap:9px}
+.mode-button{background:var(--surface);border:1px solid #52638e;border-radius:13px;color:#e9edff;font-size:12px;font-weight:750;padding:12px 13px;white-space:nowrap}
+.mode-button:hover,.clock-action:hover{border-color:#a7b8ef}
+.clock-toolbar,.clock-readout{display:none}
+body.clock-mode{overflow:hidden;background:#090e19}
+body.clock-mode .app-shell{width:100%;max-width:none;min-height:100dvh;height:100dvh;padding:max(8px,env(safe-area-inset-top)) max(9px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(9px,env(safe-area-inset-left));display:flex;flex-direction:column}
+body.clock-mode .top,
+body.clock-mode .intro,
+body.clock-mode .datebar,
+body.clock-mode .today-row,
+body.clock-mode .stats,
+body.clock-mode .events-header,
+body.clock-mode #eventList,
+body.clock-mode .legend,
+body.clock-mode footer{display:none!important}
+body.clock-mode main{min-height:0;flex:1;display:flex}
+body.clock-mode .dial-card{min-height:0;flex:1;min-width:0;margin:0;padding:12px;display:flex;flex-direction:column;gap:3px;align-items:center;justify-content:space-between;border-radius:18px;overflow:hidden}
+body.clock-mode .clock-toolbar{display:flex;width:100%;align-items:center;justify-content:space-between;gap:12px}
+.clock-toolbar-title{display:flex;flex-direction:column;gap:2px;line-height:1.1}
+.clock-toolbar-title strong{font-size:15px;font-weight:750;letter-spacing:-.02em}
+.clock-eyebrow{font-size:9px;letter-spacing:.15em;font-weight:850;color:var(--accent2)}
+.clock-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px}
+.clock-action{border:1px solid #50617c;background:#20314c;color:#eaf0ff;border-radius:12px;padding:9px 10px;font-size:12px;font-weight:720;white-space:nowrap}
+.clock-action[aria-pressed="true"]{background:#285144;border-color:#75d5b2;color:#b5ffe2}
+.clock-exit{background:#35415a;border-color:#76829a}
+body.clock-mode .dial-wrap{width:min(100%,75dvh,680px);max-width:100%;max-height:100%;flex:0 1 auto;aspect-ratio:1;container-type:inline-size}
+body.clock-mode .dial-center .clock-time{font-size:clamp(24px,10cqw,60px)}
+body.clock-mode .dial-center .remaining{font-size:clamp(9px,2.6cqw,16px)}
+body.clock-mode .dial-center .center-kicker{font-size:clamp(8px,2.1cqw,11px)}
+body.clock-mode .dial-footer{width:100%;max-width:680px}
+body.clock-mode #dialHint{display:none}
+body.clock-mode #dial{pointer-events:none}
+body.clock-mode .clock-readout{display:flex;flex-direction:column;gap:5px;align-items:center;justify-content:center;text-align:center;padding:4px 2px 8px}
+.clock-cycle-date{font-size:12px;color:#aabbd1;text-transform:capitalize}
+.clock-message{font-weight:840;font-size:clamp(17px,3.4vw,31px);letter-spacing:-.035em;line-height:1.12}
+.clock-deadline{font-size:13px;color:#c0d1ea}
+.clock-screen-hint{font-size:10px;color:#788da9;max-width:390px;line-height:1.25}
+#sleepOvertimeOverlay{opacity:0;transition:opacity 400ms;pointer-events:none}
+body.clock-overdue #sleepOvertimeOverlay{opacity:.48}
+body.clock-overdue .dial-card{border-color:#b65160;box-shadow:inset 0 0 46px #a1242635}
+body.clock-overdue .dial-center .center-kicker,
+body.clock-overdue .dial-center .remaining,
+body.clock-overdue .clock-message{color:#ff9fa8}
+body.clock-overdue #dial .current-hand,
+body.clock-overdue #dial .current-dot{stroke:#f46b73;fill:#f46b73}
+@media (orientation:landscape) and (max-height:700px){
+ body.clock-mode .dial-card{display:grid;grid-template-columns:minmax(0,1fr) minmax(195px,34vw);grid-template-rows:auto 1fr auto;grid-template-areas:"toolbar toolbar" "dial readout" "dial footer";gap:4px 12px;padding:8px 16px}
+ body.clock-mode .clock-toolbar{grid-area:toolbar}
+ body.clock-mode .clock-toolbar-title strong{font-size:13px}
+ body.clock-mode .dial-wrap{grid-area:dial;width:min(100%,calc(100dvh - 77px),600px);height:auto;max-height:calc(100dvh - 77px);justify-self:center;align-self:center}
+ body.clock-mode .dial-footer{grid-area:footer;align-self:end;justify-content:flex-start}
+ body.clock-mode .clock-readout{grid-area:readout;padding:4px;gap:8px;align-items:flex-start;text-align:left;justify-self:start}
+ body.clock-mode .clock-message{font-size:clamp(20px,3.3vw,35px)}
+ body.clock-mode .clock-screen-hint{max-width:245px}
+}
+@media(max-width:390px) and (orientation:portrait){
+ body.clock-mode .dial-card{padding:8px 5px}
+ body.clock-mode .clock-toolbar-title strong{font-size:12px}
+ body.clock-mode .clock-action{padding:8px 7px;font-size:10px}
+ body.clock-mode .clock-screen-hint{font-size:9px}
+}
+@media(max-height:540px) and (orientation:portrait){
+ body.clock-mode .dial-wrap{width:min(100%,53dvh)}
+ body.clock-mode .clock-readout{gap:2px}
+ body.clock-mode .clock-screen-hint{display:none}
+}
