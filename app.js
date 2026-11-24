@@ -228,6 +228,8 @@ async function acquireWakeLock(){
   lock.addEventListener('release',()=>{if(wakeLockSentinel===lock){wakeLockSentinel=null;updateWakeButton()}});
   updateWakeButton();
  }catch(error){
+  wakeLockWanted=false;
+  try{localStorage.setItem(WAKE_LOCK_STORE,'no')}catch{}
   updateWakeButton();
   toast('Экран не удерживается: '+(error?.message||'ограничение устройства'));
  }
