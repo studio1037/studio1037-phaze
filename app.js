@@ -204,48 +204,66 @@ function setupDialPointer(){
 }
 
 
+let wakeLockPending=false,wakeLockDenied=false,wakeLockEpoch=0,pageActive=true;
+const canHoldScreen=()=>viewMode==='clock'&&wakeLockWanted&&pageActive&&document.visibilityState==='visible';
 function updateWakeButton(){
  const button=$('clockWakeBtn');
- if(!button)return;
- const supported=Boolean(navigator.wakeLock&&navigator.wakeLock.request);
+ const supported=Boolean(navigator.wakeLock?.request);
+ const held=Boolean(wakeLockSentinel&&!wakeLockSentinel.released);
  button.disabled=!supported;
- button.setAttribute('aria-pressed',String(Boolean(wakeLockSentinel)));
- button.textContent=!supported?'☀ Недоступно':wakeLockSentinel?'✓ Экран включён':wakeLockWanted?'☀ Повторить':'☀ Экран вкл';
+ button.setAttribute('aria-pressed',String(held));
+ button.title=wakeLockWanted?'Отменить удержание экрана':'Запросить удержание экрана';
+ button.textContent=!supported?'Экран: недоступно':held?'✓ Экран удерживается':
+  !wakeLockWanted?'Экран: авто':wakeLockPending?'Экран: запрос…':
+  wakeLockDenied?'Экран: отказано':'Экран: ожидание';
 }
 async function releaseWakeLock(){
+ wakeLockEpoch++;
+ wakeLockDenied=false;
  const held=wakeLockSentinel;
  wakeLockSentinel=null;
- if(held)try{await held.release()}catch{}
  updateWakeButton();
+ if(held&&!held.released)try{await held.release()}catch{}
 }
 async function acquireWakeLock(){
- if(viewMode!=='clock'||!wakeLockWanted||document.visibilityState==='hidden')return;
- if(wakeLockSentinel){updateWakeButton();return}
- if(!navigator.wakeLock?.request){updateWakeButton();toast('Держать экран включённым нельзя в этом браузере');return}
+ if(!canHoldScreen()||wakeLockPending||wakeLockDenied||
+  (wakeLockSentinel&&!wakeLockSentinel.released)||!navigator.wakeLock?.request)return;
+ wakeLockPending=true;
+ const epoch=wakeLockEpoch;
+ updateWakeButton();
  try{
   const lock=await navigator.wakeLock.request('screen');
-  if(viewMode!=='clock'||!wakeLockWanted){await lock.release();return}
+  if(epoch!==wakeLockEpoch||!canHoldScreen()){await lock.release();return}
+  if(lock.released){wakeLockDenied=true;return}
   wakeLockSentinel=lock;
-  lock.addEventListener('release',()=>{if(wakeLockSentinel===lock){wakeLockSentinel=null;updateWakeButton()}});
+  lock.addEventListener('release',()=>{
+   if(wakeLockSentinel!==lock)return;
+   wakeLockSentinel=null;
+   updateWakeButton();
+  });
+ }catch{
+  if(epoch===wakeLockEpoch&&canHoldScreen())wakeLockDenied=true;
+ }finally{
+  wakeLockPending=false;
   updateWakeButton();
- }catch(error){
-  wakeLockWanted=false;
-  try{localStorage.setItem(WAKE_LOCK_STORE,'no')}catch{}
-  updateWakeButton();
-  toast('Экран не удерживается: '+(error?.message||'ограничение устройства'));
+  if(epoch!==wakeLockEpoch)void acquireWakeLock();
  }
 }
 function setWakeLockWanted(next){
- wakeLockWanted=Boolean(next);
- try{localStorage.setItem(WAKE_LOCK_STORE,wakeLockWanted?'yes':'no')}catch{}
- if(wakeLockWanted)void acquireWakeLock();
+ wakeLockWanted=next;
+ try{localStorage.setItem(WAKE_LOCK_STORE,next?'yes':'no')}catch{}
+ if(next)void acquireWakeLock();
  else void releaseWakeLock();
- updateWakeButton();
+}
+function resumeClock(){
+ if(!pageActive||document.hidden)return;
+ tickClock();
+ if(viewMode==='clock')void acquireWakeLock();
 }
 function updateFullscreenButton(){
  const btn=$('clockFullscreenBtn');
  if(!btn)return;
- btn.hidden=!document.documentElement.requestFullscreen;
+ btn.hidden=!document.fullscreenEnabled||!document.documentElement.requestFullscreen;
  btn.textContent=document.fullscreenElement?'⇲ Свернуть':'⛶ Весь экран';
 }
 async function toggleFullscreen(){
@@ -465,7 +483,13 @@ function setup(){
  $('clockWakeBtn').addEventListener('click',()=>setWakeLockWanted(!wakeLockWanted));
  $('clockFullscreenBtn').addEventListener('click',toggleFullscreen);
  document.addEventListener('fullscreenchange',updateFullscreenButton);
- document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&viewMode==='clock'&&wakeLockWanted)void acquireWakeLock()});
+ document.documentElement.classList.toggle('standalone',navigator.standalone===true||matchMedia('(display-mode: standalone)').matches);
+ window.addEventListener('pagehide',()=>{pageActive=false;void releaseWakeLock()});
+ window.addEventListener('pageshow',()=>{pageActive=true;resumeClock()});
+ document.addEventListener('visibilitychange',()=>{
+  if(document.hidden)void releaseWakeLock();
+  else resumeClock();
+ });
  updateWakeButton();updateFullscreenButton();
  const events=[['prevBtn','click',()=>dayMove(-1)],['nextBtn','click',()=>dayMove(1)],['todayBtn','click',()=>{selectedDate=activeDate();render();if(googleAccessToken)syncGoogle(false)}],['addBtn','click',()=>openEvent({title:'',category:'family',durationMin:Math.min(60,MINUTES-(pinnedMinute??0)),startMode:'relative',offsetMin:pinnedMinute??0,start:wakeFor(selectedDate),repeat:{type:'daily'},doneDates:[],skipDates:[]})],['settingsBtn','click',()=>{renderWakeSettings();$('clientIdField').value=state.google.clientId;renderCalendarChooser();modal('settingsModal',true)}],['eventForm','submit',onSaveEvent],['repeatField','change',renderRepeatFields],['startMode','change',renderModeFields],['exportBtn','click',exportData],['exportFooter','click',exportData],['importBtn','click',()=>$('importFile').click()],['importFile','change',ev=>{if(ev.target.files[0])importData(ev.target.files[0]);ev.target.value=''}],['connectGoogleBtn','click',startGoogleAuth],['syncGoogleBtn','click',()=>syncGoogle()],['clearCalendarBtn','click',()=>{googleSyncVersion++;state.google.cache={};save();render();setGoogleMessage('Кэш Google очищен');toast('Кэш Google очищен')}]];for(const [id,t,f]of events)$(id).addEventListener(t,f);
  $('deleteEventBtn').addEventListener('click',()=>{const id=$('eventId').value;if(!id||!confirm('Удалить событие и все его повторения?'))return;state.events=state.events.filter(e=>e.id!==id);save();modal('eventModal',false);render();toast('Событие удалено')});
@@ -476,6 +500,7 @@ function setup(){
  document.addEventListener('visibilitychange',()=>{if(!document.hidden){tickClock();render()}});
  if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./service-worker.js').catch(()=>{});
  if(viewMode==='clock')applyViewMode('clock');else render();
+ document.documentElement.classList.remove('clock-startup');
  setInterval(tickClock,1000);
  window.PHAZESync?.start({
   read:syncDocument,readMeta:()=>state.syncMeta,apply:applySyncDocument,validate:validSyncDocument,

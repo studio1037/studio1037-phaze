@@ -9,9 +9,10 @@
   <meta name="apple-mobile-web-app-title" content="PHAZE">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" type="image/svg+xml" href="icon-192.svg">
-  <link rel="apple-touch-icon" href="icon-192.svg">
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
   <title>PHAZE — Твои 16 часов</title>
   <link rel="stylesheet" href="style.css">
+  <script>try{if(localStorage.getItem('phaze-view-mode')==='clock')document.documentElement.classList.add('clock-startup')}catch{}</script>
 </head>
 <body>
 <div class="app-shell">
@@ -45,7 +46,7 @@
     <span id="clockCycleDate" class="clock-cycle-date">Сегодня</span>
     <strong id="clockMessage" class="clock-message">Твои 16 часов</strong>
     <span id="clockDeadline" class="clock-deadline">Время сна · --:--</span>
-    <small id="clockScreenHint" class="clock-screen-hint">Для горизонтального режима поверни устройство. На iPhone установи PWA через Safari.</small>
+    <small id="clockScreenHint" class="clock-screen-hint">На iPhone: Safari → Поделиться → На экран «Домой».</small>
    </div>
  </section>
  <section class="stats" aria-label="Статистика дня"><div><span class="stat-label">Запланировано</span><strong id="plannedStat">0 ч</strong></div><div><span class="stat-label">Свободно</span><strong id="freeStat">16 ч</strong></div><div><span class="stat-label">Отмечено</span><strong id="doneStat">0 ч</strong></div></section>
@@ -53,7 +54,7 @@
  <div id="eventList" class="event-list"></div>
  <section class="legend"><h3>Категории</h3><div class="legend-items"><span><i style="background:#5d9aff"></i> Работа</span><span><i style="background:#f1b85b"></i> Семья</span><span><i style="background:#ad91fa"></i> Ритуалы</span><span><i style="background:#67d8b0"></i> Личное</span><span><i style="background:#fa829a"></i> Отдых</span></div></section>
 </main>
-<footer>PHAZE v0.2-dev · Данные сохраняются в этом браузере · <button id="exportFooter">Резервная копия</button></footer>
+<footer>PHAZE v0.2-dev · Clock PWA 2026-11-25 · Данные сохраняются в этом браузере · <button id="exportFooter">Резервная копия</button></footer>
 </div>
 <div class="modal-overlay" id="eventModal" hidden><section class="modal" role="dialog" aria-modal="true" aria-labelledby="eventModalTitle"><div class="modal-head"><h2 id="eventModalTitle">Новое событие</h2><button class="modal-close" data-close="eventModal" aria-label="Закрыть">×</button></div>
  <form id="eventForm"><input id="eventId" type="hidden"><label>Название<input id="titleField" required maxlength="80" placeholder="Например: Развезти детей"></label>

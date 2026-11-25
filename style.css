@@ -104,3 +104,7 @@ body.clock-mode #elapsedOverlay{display:none}
  body.clock-mode .clock-readout{gap:2px}
  body.clock-mode .clock-screen-hint{display:none}
 }
+
+html.clock-startup body{visibility:hidden}
+html.standalone #clockScreenHint{display:none}
+body.clock-mode .clock-action{min-height:32px}
