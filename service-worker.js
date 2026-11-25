@@ -1,5 +1,5 @@
 const PREFIX = 'studio1037-phaze:' + self.registration.scope + ':';
-const CACHE = PREFIX + 'v0.2-dev-20261125-clock-pwa';
+const CACHE = PREFIX + 'v0.2-dev-20261125-clock-pwa-r2';
 const ASSETS = ['./', './index.html', './style.css', './app.js', './sync-config.js', './sync.js', './manifest.webmanifest', './icon-192.svg', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 const assetURLs = new Set(ASSETS.map(path => new URL(path, self.registration.scope).href));
 

@@ -12,7 +12,16 @@
   <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
   <title>PHAZE — Твои 16 часов</title>
   <link rel="stylesheet" href="style.css">
-  <script>try{if(localStorage.getItem('phaze-view-mode')==='clock')document.documentElement.classList.add('clock-startup')}catch{}</script>
+  <script>
+    try {
+      if (localStorage.getItem('phaze-view-mode') === 'clock') {
+        const root = document.documentElement;
+        // Reveal the page even if app.js cannot finish startup.
+        setTimeout(() => root.classList.remove('clock-startup'), 400);
+        root.classList.add('clock-startup');
+      }
+    } catch {}
+  </script>
 </head>
 <body>
 <div class="app-shell">
