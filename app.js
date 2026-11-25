@@ -110,6 +110,7 @@ function renderDial(locals,google,win){
  markup+=`</g>
  <defs><clipPath id="elapsedClip"><path id="elapsedShape"/></clipPath></defs>
  <use id="elapsedOverlay" href="#dialSurface" clip-path="url(#elapsedClip)" aria-hidden="true"/>
+ <path id="clockElapsedOverlay" fill="#8d9198" fill-opacity=".78" pointer-events="none" aria-hidden="true"/>
  <circle id="sleepOvertimeOverlay" cx="220" cy="220" r="141" fill="none" stroke="#f04b61" stroke-width="100" aria-hidden="true"/>
  <path id="hourHighlight"/>
  <circle class="clock-disc" cx="220" cy="220" r="91"/>`;
@@ -295,7 +296,9 @@ function tickClock(){
  const win=wakeWindow(),minutes=(now-win.start)/60000;
  const isToday=selectedDate===(viewMode==='clock'?clockCycleDate(now):today);
  const elapsed=isToday?Math.max(0,Math.min(MINUTES,minutes)):0;
- $('elapsedShape')?.setAttribute('d',arcPath(0,elapsed,DIAL_RADIUS,DIAL_CENTER_RADIUS));
+ const elapsedPath=arcPath(0,elapsed,DIAL_RADIUS,DIAL_CENTER_RADIUS);
+ $('elapsedShape')?.setAttribute('d',elapsedPath);
+ $('clockElapsedOverlay')?.setAttribute('d',viewMode==='clock'?elapsedPath:'');
  const indicator=$('currentIndicator');
  if(indicator){
   indicator.style.display=isToday&&minutes>=0&&minutes<MINUTES?'':'none';
