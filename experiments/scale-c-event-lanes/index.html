@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PHAZE · Дуги событий</title>
+<style>
+:root{color-scheme:dark;font:16px/1.45 system-ui,sans-serif;background:#0b111e;color:#f4f6fb;--muted:#b3c2d9;--line:#384960;--mint:#87e7c5}
+*{box-sizing:border-box}body{margin:0}main{max-width:1200px;margin:auto;padding:clamp(12px,3vw,32px)}
+h1,h2,p{margin:0}h1{font-size:clamp(24px,4vw,40px)}h2{font-size:18px}.meta,.hint,caption{color:var(--muted)}.tag{color:var(--mint);font-size:12px;font-weight:800;letter-spacing:.12em}
+.controls,.stats{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}.controls label{display:grid;font-size:12px;color:var(--muted)}
+button,input,select{font:inherit;color:inherit;background:#1b2740;border:1px solid #617997;border-radius:9px;min-height:44px;padding:6px 11px}
+button{cursor:pointer}button[aria-pressed=true]{background:var(--mint);color:#0b1817;border-color:var(--mint);font-weight:700}
+:focus-visible{outline:3px solid #fbd285;outline-offset:2px}svg [tabindex]:focus-visible{outline:none;stroke:#fff;stroke-width:3}
+.stat,.card,details{background:#151e30;border:1px solid var(--line);border-radius:14px;padding:12px}.stat{flex:1 1 125px;color:var(--muted);font-size:12px}.stat strong{display:block;color:#f4f6fb;font-size:18px}
+.pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.card{text-align:center;min-width:0}.card svg{display:block;width:100%;max-width:440px;margin:auto;overflow:visible}.card p{font-size:12px;color:var(--muted)}
+#detail{min-height:3em;margin:10px 0;color:#e1e9fb}details{margin-top:10px}summary{cursor:pointer;padding:6px}table{width:100%;border-collapse:collapse;text-align:left;font-size:14px}th,td{padding:7px 4px;border-bottom:1px solid var(--line);overflow-wrap:anywhere}td button{min-height:44px;text-align:left}
+svg text{font-family:system-ui,sans-serif;text-anchor:middle;dominant-baseline:middle;pointer-events:none;fill:#d3dff1}svg .anchor,svg .time{fill:#f4f6fb;font-weight:800}svg .now-text{fill:var(--mint);font-weight:750}svg .late{fill:#ff9fa8}
+svg [role=button]{cursor:pointer}svg .dim{opacity:.32}svg .selected{stroke:#fff;stroke-width:2.5}
+.clock .planner-only{display:none}.clock .card svg{max-width:500px}
+@media(max-width:580px) and (orientation:portrait){.pair{grid-template-columns:1fr}}
+@media(max-height:440px) and (orientation:landscape){.card svg{max-width:310px}}
+.overflow-list{display:grid;gap:8px;margin-top:8px}.overflow-list button{text-align:left}.overflow-list button[aria-pressed=true]{background:#fbd285;color:#151e30}#overlaps[hidden],.clock #overlaps{display:none}
+</style>
+<main>
+<header><div class="tag">PHAZE / DEMO</div><h1>Дуги событий</h1><p class="meta">Синтетический день · 16 часов с момента пробуждения</p></header>
+<div class="controls" aria-label="Настройки демонстрации">
+<button type="button" data-density="4">4 события</button><button type="button" data-density="8">8 событий</button><button type="button" data-density="12">12 событий</button><button type="button" data-density="20">20 событий</button>
+<button type="button" data-mode="planner">Planner</button><button type="button" data-mode="clock">Clock</button>
+<label>Пробуждение<input id="wake" type="time" value="07:00"></label><label>Состояние<select id="phase"><option value="day">Утро · +3:38</option><option value="night">После 16 часов</option></select></label>
+</div>
+<div class="stats" id="stats" aria-live="polite"><p>Загружаю демонстрацию…</p></div>
+<div class="pair">
+<section class="card"><h2>Текущая геометрия</h2><p>16 подписей · отдельные дорожки по источнику</p><svg id="current" viewBox="-14 -8 468 456" role="group" aria-label="Текущий циферблат"></svg></section>
+<section class="card"><h2>Дуги и шкала C</h2><p>4 опоры · 3 дорожки · +N при перегрузке</p><svg id="hybrid" viewBox="-14 -8 468 456" role="group" aria-label="Циферблат с дугами"></svg><p>Сплошная дуга — PHAZE · штрих на кромке — внешний макет</p></section>
+</div>
+<details id="overlaps" hidden><summary id="overlap-summary">Пересечения</summary><div id="overlap-list" class="overflow-list"></div></details>
+<p id="detail" role="status" aria-live="polite">Выберите дугу или событие в списке.</p>
+<details class="planner-only" open><summary>События и дорожки</summary><table><thead><tr><th>Событие</th><th>Время</th><th>Источник</th><th>Дорожка</th></tr></thead><tbody id="events"></tbody></table></details>
+<details><summary>Расчёт занятости и пересечения</summary><p id="math"></p></details>
+<noscript>Для интерактивного просмотра включите JavaScript.</noscript>
+</main>
+<script src="demo.js" defer></script>
+</html>
