@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PHAZE · Дуги событий</title>
+<style>
+:root{color-scheme:dark;font:16px/1.45 system-ui,sans-serif;background:#0b111e;color:#f4f6fb;--muted:#b3c2d9;--line:#384960;--mint:#87e7c5}
+*{box-sizing:border-box}body{margin:0}main{max-width:1200px;margin:auto;padding:clamp(12px,3vw,32px)}
+h1,h2,p{margin:0}h1{font-size:clamp(24px,4vw,40px)}h2{font-size:18px}.meta,.hint,caption{color:var(--muted)}.tag{color:var(--mint);font-size:12px;font-weight:800;letter-spacing:.12em}
+.controls,.stats{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}.controls label{display:grid;font-size:12px;color:var(--muted)}
+button,input,select{font:inherit;color:inherit;background:#1b2740;border:1px solid #617997;border-radius:9px;min-height:44px;padding:6px 11px}
+button{cursor:pointer}button[aria-pressed=true]{background:var(--mint);color:#0b1817;border-color:var(--mint);font-weight:700}
+:focus-visible{outline:3px solid #fbd285;outline-offset:2px}svg [tabindex]:focus-visible{outline:none;stroke:#fff;stroke-width:3}
+.stat,.card,details{background:#151e30;border:1px solid var(--line);border-radius:14px;padding:12px}.stat{flex:1 1 125px;color:var(--muted);font-size:12px}.stat strong{display:block;color:#f4f6fb;font-size:18px}
+.pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.card{text-align:center;min-width:0}.card svg{display:block;width:100%;max-width:440px;margin:auto;overflow:visible}.card p{font-size:12px;color:var(--muted)}
+#detail{min-height:3em;margin:10px 0;color:#e1e9fb}details{margin-top:10px}summary{cursor:pointer;padding:6px}table{width:100%;border-collapse:collapse;text-align:left;font-size:14px}th,td{padding:7px 4px;border-bottom:1px solid var(--line);overflow-wrap:anywhere}td button{min-height:44px;text-align:left}
+svg text{font-family:system-ui,sans-serif;text-anchor:middle;dominant-baseline:middle;pointer-events:none;fill:#d3dff1}svg .anchor,svg .time{fill:#f4f6fb;font-weight:800}svg .now-text{fill:var(--mint);font-weight:750}svg .late{fill:#ff9fa8}
+svg [role=button]{cursor:pointer}svg .dim{opacity:.32}svg .selected{stroke:#fff;stroke-width:2.5}
+.clock .planner-only{display:none}.clock .card svg{max-width:500px}
+@media(max-width:580px) and (orientation:portrait){.pair{grid-template-columns:1fr}}
+@media(max-height:440px) and (orientation:landscape){.card svg{max-width:310px}}
+</style>
+<main>
+<header><div class="tag">PHAZE / DEMO</div><h1>Дуги событий</h1><p class="meta">Синтетический день · 16 часов с момента пробуждения</p></header>
+<div class="controls" aria-label="Настройки демонстрации">
+<button type="button" data-density="4">4 события</button><button type="button" data-density="8">8 событий</button><button type="button" data-density="12">12 событий</button><button type="button" data-density="20">20 событий</button>
+<button type="button" data-mode="planner">Planner</button><button type="button" data-mode="clock">Clock</button>
+<label>Пробуждение<input id="wake" type="time" value="07:00"></label><label>Состояние<select id="phase"><option value="day">Утро · +3:38</option><option value="night">После 16 часов</option></select></label>
+</div>
+<div class="stats" id="stats"></div>
+<div class="pair">
+<section class="card"><h2>Текущая геометрия</h2><p>16 подписей · отдельные дорожки по источнику</p><svg id="current" viewBox="-14 -8 468 456" role="group" aria-label="Текущий циферблат"></svg></section>
+<section class="card"><h2>Дуги и шкала C</h2><p>4 опоры · 3 дорожки · +N при перегрузке</p><svg id="hybrid" viewBox="-14 -8 468 456" role="group" aria-label="Циферблат с дугами"></svg><p>Сплошная дуга — PHAZE · штрих на кромке — внешний макет</p></section>
+</div>
+<p id="detail" role="status" aria-live="polite">Выберите дугу или событие в списке.</p>
+<details class="planner-only" open><summary>События и дорожки</summary><table><thead><tr><th>Событие</th><th>Время</th><th>Источник</th><th>Дорожка</th></tr></thead><tbody id="events"></tbody></table></details>
+<details><summary>Расчёт занятости и пересечения</summary><p id="math"></p></details>
+</main>
+<script>
+const DAY = 960;
+const VISIBLE_LANES = 3;
+const COLORS = {ritual:'#ad91fa',family:'#f1b85b',work:'#5d9aff',personal:'#67d8b0',rest:'#fa829a',other:'#aab5c7'};
+const FIXTURE = [
+ [0,120,'Morning ritual','ritual'], [40,90,'School drop-off','family'],
+ [150,195,'Email/admin','work',true], [180,270,'Deep work','work',true],
+ [300,360,'Lunch','personal'], [360,450,'Client session','work',true],
+ [420,480,'Travel/errands','other',true], [870,960,'Bedtime preparation','ritual'],
+ [15,155,'Walk','personal'], [45,105,'Morning call','work',true],
+ [185,225,'Support','work',true], [430,460,'Pickup','family'],
+ [48,72,'Breakfast','rest'], [55,95,'Reading','ritual'],
+ [160,215,'Review','work',true], [192,245,'Design','personal'],
+ [350,390,'Studio prep','ritual'], [370,410,'Team call','work',true],
+ [435,500,'Shopping','family'], [900,950,'Wind-down','rest']
+];
+function analyze(rows, limit = DAY) {
+ const sorted = rows.map(([start,end,title,category,external=false],id) =>
+   ({start:Math.max(0,start),end:Math.min(limit,end),title,category,external,id}))
+  .filter(e => e.start < e.end)
+  .sort((a,b) => a.start-b.start || b.end-a.end || a.id-b.id);
+ const laneEnds = [];
+ for (const e of sorted) {
+  const free = laneEnds.findIndex(end => end <= e.start);
+  e.lane = free < 0 ? laneEnds.length : free;
+  laneEnds[e.lane] = e.end;
+ }
+ const points = [...new Set(sorted.flatMap(e => [e.start,e.end]))].sort((a,b)=>a-b);
+ const union = [], overflow = [];
+ let occupied = 0, peak = 0, overlap = 0;
+ for (let i=1;i<points.length;i++) {
+  const start = points[i-1], end = points[i];
+  const active = sorted.filter(e=>e.start<=start && e.end>start);
+  if (!active.length) continue;
+  occupied += end-start;
+  peak = Math.max(peak,active.length);
+  if (active.length>1) overlap += end-start;
+  if (union.at(-1)?.[1]===start) union.at(-1)[1]=end;
+  else union.push([start,end]);
+  const hidden = active.filter(e=>e.lane>=VISIBLE_LANES);
+  if (hidden.length) {
+   const last = overflow.at(-1);
+   if (last?.end===start && last.hidden.length===hidden.length &&
+       last.hidden.every((event,index)=>event===hidden[index])) last.end=end;
+   else overflow.push({start,end,hidden});
+  }
+ }
+ return {sorted,union,overflow,occupied,peak,overlap,free:limit-occupied,sum:sorted.reduce((n,e)=>n+e.end-e.start,0)};
+}
+const $ = id => document.getElementById(id);
+let density=8, mode='planner', selected=null, wake=420, late=false, model;
+const time = minute => {
+ const m = (wake+minute)%1440;
+ return [Math.floor(m/60),m%60].map(v=>String(v).padStart(2,'0')).join(':');
+};
+const range = (s,e)=>time(s)+'–'+time(e);
+const point = (r,m) => {
+ const angle = m/DAY*Math.PI*2-Math.PI/2;
+ return [220+r*Math.cos(angle),220+r*Math.sin(angle)].map(v=>Number(v.toFixed(3)));
+};
+function band(s,e,outer,inner) {
+ if(e-s===DAY) return band(s,s+480,outer,inner)+band(s+480,e,outer,inner);
+ const big=Number(e-s>480);
+ return `M${point(outer,s)} A${outer},${outer} 0 ${big} 1 ${point(outer,e)} L${point(inner,e)} A${inner},${inner} 0 ${big} 0 ${point(inner,s)} Z`;
+}
+const textAt=(r,m,t,c='',size=13)=>{const [x,y]=point(r,m);return `<text x="${x}" y="${y}" font-size="${size}" class="${c}">${t}</text>`;};
+function legacyBands(events) {
+ const ends={local:[-1,-1,-1],external:[-1,-1,-1]};
+ return events.map(e=>{
+  const slots=ends[e.external?'external':'local'];
+  const free=slots.findIndex(end=>end<=e.start);
+  const lane=free<0?2:free;
+  slots[lane]=Math.max(slots[lane],e.end);
+  const outer=e.external?119-lane*6:[175,151,130][lane];
+  return {e,outer,inner:e.external?outer-5:[153,132,123][lane]};
+ });
+}
+function dial(svg, hybrid) {
+ let markup='<circle cx="220" cy="220" r="191" fill="#1b2a42" stroke="#526784" stroke-width="2"/>';
+ for(let i=0;i<16;i++) markup+=`<path d="${band(i*60,(i+1)*60,191,91)}" fill="${i%2?'#233550':'#1c2d46'}"/>`;
+ markup+=`<path d="${band(0,late?DAY:218,191,91)}" fill="${late?'#883847':'#646a73'}" opacity=".72"/>`;
+ for(let i=0;i<16;i++) {
+  const [x,y]=point(191,i*60), [x1,y1]=point(91,i*60);
+  markup+=`<line x1="${x1}" y1="${y1}" x2="${x}" y2="${y}" stroke="${i%4===0?'#acbad0':'#64748a'}" stroke-width="${i%4===0?2:1}"/>`;
+ }
+ const lanes=hybrid ? model.sorted.filter(e=>e.lane<VISIBLE_LANES).map(e=>({e,outer:181-e.lane*23,inner:165-e.lane*23})) : legacyBands(model.sorted);
+ for(const {e,outer,inner} of lanes){
+  const color=COLORS[e.category];
+  const interactive=mode==='planner'? `tabindex="0" role="button" data-event="${e.id}" aria-label="${e.title}, ${range(e.start,e.end)}, ${e.external?'внешний макет':'PHAZE'}"`:'';
+  markup+=`<path ${interactive} d="${band(e.start,e.end,outer,inner)}" fill="${color}" stroke="#121c2b" stroke-width="1.4"><title>${e.title} · ${range(e.start,e.end)}</title></path>`;
+  if(hybrid && e.external && e.end-e.start<DAY) markup+=`<path d="M${point(outer-4,e.start)} A${outer-4},${outer-4} 0 ${Number(e.end-e.start>480)} 1 ${point(outer-4,e.end)}" fill="none" stroke="#131d2d" stroke-width="2.5" stroke-dasharray="4 3" pointer-events="none"/>`;
+ }
+ if(hybrid) {
+  let badgeEnd=-1;
+  model.overflow.forEach((segment,i)=>{
+   const mid=(segment.start+segment.end)/2;
+   const interactive=mode==='planner'?`tabindex="0" role="button" data-overflow="${i}" aria-label="${range(segment.start,segment.end)}, ещё ${segment.hidden.length}: ${segment.hidden.map(e=>e.title).join(', ')}"`:'';
+   markup+=`<path ${interactive} d="${band(segment.start,segment.end,110,95)}" fill="#fbd285" stroke="#151e30" stroke-width="1"><title>+${segment.hidden.length}: ${segment.hidden.map(e=>e.title).join(', ')}</title></path>`;
+   if(mid>=badgeEnd){
+    const [x,y]=point(103,mid);
+    markup+=`<g pointer-events="none"><rect x="${x-11}" y="${y-8}" width="22" height="16" rx="5" fill="#101827" stroke="#fbd285"/>${textAt(103,mid,'+'+segment.hidden.length,'',11)}</g>`;
+    badgeEnd=mid+39;
+   }
+  });
+ }
+ for(let i=0;i<16;i++) {
+  if(!hybrid || i%4===0) {
+   const value=time(i*60);
+   const h=Number(value.slice(0,2));
+   const label=hybrid ? (value.endsWith(':00')?value.slice(0,2):value) : `${h%12||12}:${value.slice(3)} ${h<12?'AM':'PM'}`;
+   markup+=textAt(208,i*60,label,i%4===0?'anchor':'',hybrid?17:10);
+  }
+ }
+ markup+='<circle cx="220" cy="220" r="90" fill="#101827" stroke="#566780"/>';
+ const now=late?DAY:218;
+ const [x,y]=point(190,now), [x1,y1]=point(91,now);
+ const hand=late?'#ff9fa8':'#87e7c5';
+ markup+=`<g pointer-events="none"><line x1="${x1}" y1="${y1}" x2="${x}" y2="${y}" stroke="#101827" stroke-width="8"/><line x1="${x1}" y1="${y1}" x2="${x}" y2="${y}" stroke="${hand}" stroke-width="4"/><circle cx="${x}" cy="${y}" r="6" fill="${hand}" stroke="#101827" stroke-width="2"/></g>`;
+ markup+=textAt(30,0,late?'Иди спать':'СЕЙЧАС',late?'late':'now-text',14)+textAt(0,0,time(late?DAY+1:218),'time',34)+textAt(35,480,'Сон с '+time(DAY),'',14);
+ svg.innerHTML=markup;
+}
+function render() {
+ const rows=density===4?[FIXTURE[0],FIXTURE[1],FIXTURE[3],FIXTURE[7]]:FIXTURE.slice(0,density);
+ model=analyze(rows);
+ document.querySelector('main').classList.toggle('clock',mode==='clock');
+ document.querySelectorAll('[data-density],[data-mode]').forEach(b=>b.setAttribute('aria-pressed',String(Number(b.dataset.density)===density||b.dataset.mode===mode)));
+ $('stats').innerHTML=[['Занято',model.occupied+' мин'],['Свободно',model.free+' мин'],['Сумма длительностей',model.sum+' мин'],['Пик одновременно',model.peak+'']].map(([k,v])=>`<div class="stat"><strong>${v}</strong>${k}</div>`).join('');
+ $('math').textContent='Объединение: '+model.union.map(([s,e])=>range(s,e)).join(', ')+`. Занято ${model.occupied} из 960 мин. Пересечения длились ${model.overlap} мин. Избыточный счёт суммы: ${model.sum-model.occupied} мин. Резерв: ${model.overflow.length} интервалов.`;
+ $('events').innerHTML=model.sorted.map(e=>`<tr><td><button data-event="${e.id}">${e.title}</button></td><td>${range(e.start,e.end)}</td><td>${e.external?'Внешний макет':'PHAZE'}</td><td>${e.lane+1}${e.lane>=VISIBLE_LANES?' · +N':''}</td></tr>`).join('');
+ dial($('current'),false); dial($('hybrid'),true);
+ showDetail(null);
+}
+function showDetail(target) {
+ const event=target?.hasAttribute('data-event')?model.sorted.find(e=>e.id===Number(target.dataset.event)):null;
+ const overflow=target?.hasAttribute('data-overflow')?model.overflow[Number(target.dataset.overflow)]:null;
+ $('detail').textContent=event ? `${event.title} · ${range(event.start,event.end)} · ${event.external?'внешний макет':'PHAZE'} · дорожка ${event.lane+1}`
+   : overflow ? `${range(overflow.start,overflow.end)} · ещё ${overflow.hidden.length}: ${overflow.hidden.map(e=>e.title+' ('+range(e.start,e.end)+')').join(', ')}`
+   : mode==='clock'?'Серый сектор — прошедшее время. Подробности событий доступны в Planner.':'Выберите дугу или событие в списке.';
+ document.querySelectorAll('svg [data-event],svg [data-overflow]').forEach(el=>el.classList.toggle('selected',el===target||Boolean(event&&el.dataset.event===String(event.id))));
+}
+function select(target){selected=target;showDetail(selected);}
+document.querySelector('.controls').addEventListener('click',e=>{
+ const button=e.target.closest('button');
+ if(!button)return;
+ if(button.dataset.density)density=Number(button.dataset.density);
+ if(button.dataset.mode)mode=button.dataset.mode;
+ selected=null;render();
+});
+$('wake').addEventListener('change',e=>{
+ if(!e.target.value)return;
+ const [h,m]=e.target.value.split(':').map(Number);
+ wake=h*60+m;selected=null;render();
+});
+$('phase').addEventListener('change',e=>{late=e.target.value==='night';selected=null;render();});
+const match='[data-event],[data-overflow]';
+document.querySelector('main').addEventListener('click',e=>{const t=e.target.closest(match);if(t)select(t);});
+document.querySelector('main').addEventListener('pointerover',e=>{const t=e.target.closest('svg [data-event],svg [data-overflow]');if(t && e.pointerType==='mouse')showDetail(t);});
+document.querySelector('.pair').addEventListener('pointerleave',()=>showDetail(selected));
+document.querySelector('.pair').addEventListener('focusin',e=>{if(e.target.matches(match))showDetail(e.target);});
+document.querySelector('.pair').addEventListener('keydown',e=>{
+ if(e.target.matches(match)&&['Enter',' '].includes(e.key)){e.preventDefault();select(e.target);}
+});
+render();
+</script>
+</html>
