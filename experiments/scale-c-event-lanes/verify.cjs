@@ -12,7 +12,7 @@ const document = {
   querySelector() { return {addEventListener(){},classList:{toggle(){}}}; },
   querySelectorAll() { return []; }
 };
-const source = fs.readFileSync(path.join(__dirname,'index.html'),'utf8').split('<script>')[1].split('</script>')[0];
+const source = fs.readFileSync(path.join(__dirname,'demo.js'),'utf8');
 const context = vm.createContext({document,assert,print:console.log});
 vm.runInContext(source,context);
 vm.runInContext(`
